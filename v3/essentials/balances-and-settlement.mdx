@@ -1,0 +1,136 @@
+---
+title: "Balances & Settlement"
+description: "How deposit and payout balances work, how to move funds between them, and how to settle your earnings"
+---
+
+Kotani Pay tracks two separate fiat balances for each wallet currency. Understanding the difference between them — and how to move money between them — is essential before you start processing real transactions.
+
+---
+
+## Two Separate Balances
+
+### Deposit Balance
+
+Your **deposit balance** is credited every time a deposit transaction is successfully collected from a user. When a customer pays via mobile money, bank checkout, or card, those funds land in your deposit balance after reconciliation.
+
+Think of it as: *money you've collected from your users.*
+
+### Payout Balance
+
+Your **payout balance** is what funds withdrawals (disbursements to users). When you initiate a withdrawal via the API, the amount is immediately debited from your payout balance. If your payout balance is zero, withdrawal requests will fail with insufficient funds.
+
+Think of it as: *money available to send out.*
+
+---
+
+## Viewing Your Balances
+
+In the dashboard, go to **Wallets** in the left sidebar. Each currency has its own wallet card showing both balances separately.
+
+<img
+  src="/images/dashboard/fiat-wallets-overview.png"
+  alt="Fiat Wallets page showing deposit and payout balances per currency"
+/>
+
+Use the **country/currency selector in the top right** to switch between currencies if you operate in multiple countries.
+
+---
+
+## Transferring from Deposit to Payout Balance
+
+Before you can send money to users, you need funds in your **payout balance**. You can move funds from your deposit balance to your payout balance at any time.
+
+### From the Dashboard
+
+1. Go to **Wallets** in the sidebar
+2. Find the wallet for the currency you want to transfer
+3. Click the **Transfer Deposit Balance** button on that wallet card
+4. Enter the amount to transfer and confirm
+
+
+<img
+  src="/images/dashboard/fiat-wallets-overview-2.png"
+  alt="Transfer Deposit Balance button on fiat wallet card"
+/>
+ --- 
+ 
+<img
+  src="/images/dashboard/transfer-deposit-balance.png"
+  alt="Transfer Deposit Balance button on fiat wallet card"
+/>
+
+### Via the API
+
+See the [Transfer Deposit Balance](/v3/api-reference/wallets/fiat/transfer-deposit-balance) endpoint in the API reference for the full request and response details.
+
+The transfer is immediate — your payout balance increases and your deposit balance decreases by the same amount.
+
+---
+
+## Settlement
+
+Settlement is the process of moving your collected funds out of Kotani Pay to your external account. Currently, **settlement is manual only** — there is no automated settlement schedule.
+
+### How Settlement Works
+
+<Steps>
+  <Step title="Request a settlement form">
+    Reach out through your designated communication channel (e.g., Slack) to request a settlement. The Kotani Pay team will send you a settlement form to fill out.
+  </Step>
+
+  <Step title="Fill out the form">
+    The form captures the details needed to process your settlement:
+    - The amount you want to settle
+    - The currency you want to receive
+    - Your destination account or wallet details
+  </Step>
+
+  <Step title="Review and approval">
+    The Kotani Pay team reviews the submitted form. Once approved, the requested amount is deducted from your balance.
+  </Step>
+
+  <Step title="Test transaction">
+    Before releasing the full amount, a small test transaction is sent to your destination. This confirms the destination details are correct.
+  </Step>
+
+  <Step title="Full release">
+    After the test transaction is confirmed, the remaining funds are released and the settlement is marked complete.
+  </Step>
+</Steps>
+
+---
+
+## Common Questions
+
+**Why did my withdrawal fail with insufficient funds?**
+
+Withdrawals pull from your **payout balance**, not your deposit balance. If you have collected deposits but haven't transferred them to your payout balance, you'll see an insufficient funds error even though you have a deposit balance. Use the **Transfer Deposit Balance** flow to move funds across.
+
+**Do I need to move funds to the payout balance before every withdrawal?**
+
+You only need to ensure your payout balance covers the withdrawals you're processing. Many integrators fund the payout balance in bulk (e.g., top it up at the start of the day) rather than per transaction.
+
+**What currency do I receive settlement in?**
+
+Settlement currency and destination are agreed upon when you submit the settlement form. Speak to your account manager for the specific options available to you.
+
+**How long does settlement take?**
+
+After the test transaction is confirmed, the remaining funds are released promptly. Total time depends on review time and how quickly the test transaction confirms. Expect 1–3 business days end to end.
+
+**Is there an API endpoint to request settlement?**
+
+Settlement requests are currently handled manually — reach out through your communication channel to begin the process.
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Fiat Wallet API" icon="code" href="/v3/api-reference/wallets/fiat/transfer-deposit-balance">
+    Transfer deposit balance via the API
+  </Card>
+  <Card title="Withdrawal Flows" icon="arrow-up" href="/v3/flows/withdrawal-flow">
+    How withdrawals debit from your payout balance
+  </Card>
+</CardGroup>

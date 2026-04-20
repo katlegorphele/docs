@@ -1,40 +1,97 @@
 ---
 title: "Error Handling"
-description: "Understanding Kotani Pay API error responses and how to handle them"
+description: "HTTP status codes and error response format for the Kotani Pay API"
 ---
 
-The Kotani Pay API uses conventional HTTP response codes to indicate the success or failure of an API request. In general:
+The Kotani Pay API uses standard HTTP status codes. `2xx` means success, `4xx` means the request was rejected, `5xx` means something failed on the server.
 
-- **2xx** codes indicate success
-- **4xx** codes indicate an error that failed given the information provided
-- **5xx** codes indicate an error with Kotani Pay's servers
+---
 
-## Error Response Format
+## Response Envelope
 
-All error responses follow a consistent format:
+All responses — success and error — follow a consistent envelope.
+
+**Success:**
 
 ```json
 {
-  "status": "error",
-  "message": "A human-readable error message",
-  "error_code": "SPECIFIC_ERROR_CODE",
-  "timestamp": "2024-01-15T10:30:00Z"
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": { }
 }
 ```
 
-## Common Error Codes
+**Error:**
 
-| Code                   | Description                                |
-| ---------------------- | ------------------------------------------ |
-| `INVALID_API_KEY`      | The provided API key is invalid or expired |
-| `INSUFFICIENT_BALANCE` | Insufficient balance in the wallet         |
-| `INVALID_PHONE_NUMBER` | The phone number format is invalid         |
-| `TRANSACTION_FAILED`   | The transaction could not be processed     |
-| `RATE_LIMITED`         | Too many requests - rate limit exceeded    |
+```json
+{
+  "success": false,
+  "message": "Descriptive error message",
+  "error_code": 400,
+  "data": { }
+}
+```
 
-## Best Practices
+The `error_code` field mirrors the HTTP status code. For validation failures, `data.errors` contains the individual field messages:
 
-1. **Always check the response status** before processing the response body
-2. **Implement retry logic** for 5xx errors with exponential backoff
-3. **Log error responses** for debugging and monitoring
-4. **Handle rate limiting** by implementing proper backoff strategies
+```json
+{
+  "success": false,
+  "message": "Validation failed: amount must be a positive number, customerKey should not be empty",
+  "error_code": 400,
+  "data": {
+    "errors": [
+      "amount must be a positive number",
+      "customerKey should not be empty"
+    ]
+  }
+}
+```
+
+---
+
+## Status Codes
+
+| Status | Meaning |
+|--------|---------|
+| `200` | Success |
+| `400` | Bad request — invalid parameters or missing required fields |
+| `401` | Unauthorized — API key or JWT is missing or invalid |
+| `403` | Forbidden — key is valid but lacks permission, or the resource is not accessible |
+| `404` | Resource not found |
+| `429` | Rate limit exceeded |
+| `500` | Internal server error — contact support if it persists |
+
+---
+
+## Rate Limit Errors
+
+When rate limited, the `data` field includes how long to wait:
+
+```json
+{
+  "success": false,
+  "message": "Too many requests. You have exceeded the limit of 60 requests per 60 seconds. Please wait before trying again.",
+  "error_code": 429,
+  "data": {
+    "retryAfter": 60
+  }
+}
+```
+
+---
+
+## Customer Suspension
+
+If a `customer_key` belongs to a suspended customer, the request returns `403`:
+
+```json
+{
+  "success": false,
+  "message": "Customer cust_abc123 is temporarily suspended until 2025-01-01 12:00:00 UTC and cannot initiate transactions. Please contact support to resolve the customer's status.",
+  "error_code": 403,
+  "data": {
+    "bannedUntil": "2025-01-01T12:00:00Z"
+  }
+}
+```

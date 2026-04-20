@@ -3,6 +3,38 @@ title: "Withdrawal Flows"
 description: "Disburse funds to mobile money wallets (M-PESA, MTN Money, Airtel Money, etc.)"
 ---
 
+## Before You Start: Payout Balance
+
+Withdrawals debit your **payout balance**, not your deposit balance. These are two separate buckets. If your payout balance is zero, the API will return an insufficient funds error even if you have a healthy deposit balance.
+
+To fund your payout balance:
+- **Dashboard**: Fiat Wallets → click **Transfer Deposit Balance** on the relevant wallet
+- **API**: `POST /api/v3/wallets/fiat/transfer-deposit-balance`
+
+<img
+  src="/images/dashboard/transfer-deposit-balance.png"
+  alt="Transfer Deposit Balance button on the fiat wallet card"
+/>
+
+See [Balances & Settlement](/v3/essentials/balances-and-settlement) for the full explanation including the settlement process.
+
+---
+
+## Monitoring Withdrawals from the Dashboard
+
+1. Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com)
+2. Use the **country and currency selector in the top right** to select the relevant market
+3. Navigate to **Payouts** in the left sidebar
+
+<img
+  src="/images/dashboard/withdrawals-list.png"
+  alt="Withdrawals list in the dashboard with country/currency filter active"
+/>
+
+Each row shows the reference, amount, recipient, status, and timestamp. Click a row to see the provider reference, callback history, and whether the wallet was reversed on failure.
+
+---
+
 ## Mobile Money Withdrawal Flow
 
 ### Flow Diagram

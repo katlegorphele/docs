@@ -1,96 +1,116 @@
 ---
 title: "Development Guide"
-description: "Development best practices for Kotani Pay API v3 integration"
+description: "Environments, authentication, request structure, and error handling for the Kotani Pay API v3"
 ---
 
-<Info>
-  **Prerequisites**: - Valid Kotani Pay integrator account - API credentials
-  (JWT token and API key) - Development environment setup
-</Info>
+## Environments
 
-Follow these guidelines for effective development with Kotani Pay API v3.
+Always develop against sandbox first. Production and sandbox share the same API structure — only the base URL and credentials differ.
 
-<Steps>
-<Step title="Set up your environment">
+| Environment | Base URL |
+|-------------|----------|
+| **Sandbox** | `https://sandbox-api.kotanipay.com` |
+| **Production** | `https://api.kotanipay.com` |
 
-Start with the sandbox environment for development and testing:
+Sandbox API keys do not work in production and vice versa. Generate environment-specific credentials for each.
 
-```bash
-BASE_URL=https://sandbox-api.kotanipay.com
-```
+---
 
-</Step>
+## Authentication
 
-<Step title="Authenticate your requests">
+Every request requires an `Authorization: Bearer` header. Both API keys and JWT tokens are accepted in the same header format.
 
-Include your JWT token in the Authorization header:
+**API keys** are the right choice for server-to-server integrations — they do not expire unless revoked. **JWT tokens** are short-lived (1 hour) and mainly used during the API key generation flow.
 
-```bash
-curl -X GET "https://sandbox-api.kotanipay.com/health" \
-  -H "Authorization: Bearer <your-jwt-token>" \
-  -H "Content-Type: application/json"
-```
+See [API Keys](/v3/getting-started/api-keys) for how to generate a key and the difference between integrator-level and user-bound keys.
 
-</Step>
+---
 
-<Step title="Handle responses properly">
+## Request & Response Format
 
-All Kotani Pay API responses follow this structure:
+All endpoints accept and return JSON. Set `Content-Type: application/json` on requests with a body.
 
+All responses follow a consistent envelope:
+
+**Success:**
 ```json
 {
   "success": true,
-  "message": "Operation completed successfully",
-  "data": {
-    // Response data here
-  }
+  "message": "...",
+  "data": { }
 }
 ```
 
-</Step>
-</Steps>
-
-## Error Handling
-
-Kotani Pay API uses standard HTTP status codes and consistent error format:
-
+**Error:**
 ```json
 {
   "success": false,
-  "message": "Error description",
-  "data": {}
+  "message": "Descriptive error message",
+  "error_code": 400,
+  "data": { }
 }
 ```
 
-Common status codes:
+See [Error Handling](/v3/essentials/error-handling) for the full status code reference and error payload details.
 
-- `200` - Success
-- `400` - Bad Request
-- `401` - Unauthorized
-- `404` - Not Found
-- `500` - Internal Server Error
+---
 
-## Rate Limiting
+## Error Codes
 
-Be mindful of API rate limits to ensure smooth integration:
+| Status | Meaning |
+|--------|---------|
+| `200` | Success |
+| `400` | Bad request — check your request body and parameters |
+| `401` | Unauthorized — API key or JWT is missing or invalid |
+| `403` | Forbidden — key exists but lacks permission for this operation |
+| `404` | Resource not found |
+| `429` | Rate limit exceeded |
+| `500` | Internal server error — contact support if persistent |
 
-- Implement exponential backoff for retries
-- Cache responses when appropriate
-- Use webhooks instead of polling for status updates
+---
 
-## Testing
+## Rate Limits
 
-Use our comprehensive test endpoints:
+The API applies per-endpoint, per-key rate limits with three tiers:
 
-<Card title="Health Check" icon="heart" href="/v3/api-reference/system/health">
-  Verify API connectivity and service status
-</Card>
+| Tier | Applied to |
+|------|------------|
+| **General** | Standard create/update operations |
+| **Sensitive** | Authentication and security-critical endpoints |
+| **Read-only** | GET/list endpoints |
+
+When rate limited, the response includes a `retryAfter` value in seconds. Specific limits are configurable per integrator — contact your account manager if you need a higher limit for a high-volume integration.
+
+---
+
+## Idempotency
+
+For deposits and withdrawals, always send a reference ID. The field name differs by flow:
+
+- Deposits use `reference_id` (snake_case)
+- Withdrawals use `referenceId` (camelCase)
+
+Reference IDs must be unique per integrator. If a request times out or fails at the network level, retrying with the same reference ID will not create a duplicate transaction.
+
+---
+
+## Webhooks
+
+Use webhooks instead of polling. Configure your endpoint in the dashboard under **Settings**.
+
+There are two delivery modes — which one you receive depends on whether a webhook secret is configured on your account. When a secret is configured, each request includes an `X-Kotani-Signature` header you must verify before processing. Without a secret, Kotani Pay posts directly to the `callbackUrl` on each transaction with no signature headers.
+
+See [Webhooks](/v3/essentials/webhooks) for both delivery modes, all event types, payload schemas, and the signature verification code.
+
+---
 
 ## Going to Production
 
-When ready to deploy:
+1. Switch your base URL to `https://api.kotanipay.com`
+2. Run the magic link login flow against production to get a production JWT
+3. Generate a production API key using that JWT
+4. Update your webhook endpoint to point to your production server
 
-1. Update base URL to production: `https://api.kotanipay.com`
-2. Replace sandbox credentials with production credentials
-3. Configure production webhook endpoints
-4. Enable monitoring and logging
+<Warning>
+  Sandbox credentials do not work against the production URL. Always generate environment-specific keys.
+</Warning>

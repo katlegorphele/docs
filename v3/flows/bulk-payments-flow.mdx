@@ -448,108 +448,16 @@ Bulk payments via bank transfers.
 
 ---
 
-## Webhook Notifications
+## Callbacks
 
-Webhooks sent for batch status changes and completion.
+Each bulk payment batch is created with a `callbackUrl`. Individual payments within a batch are processed as withdrawal transactions, so each payment completion triggers the standard `transaction.withdrawal.status.updated` webhook event to your configured webhook endpoint.
 
-### Webhook Events
+For overall batch progress and results, poll the batch status endpoints rather than relying solely on individual payment webhooks:
 
-**Batch Started**:
-```json
-{
-  "event": "bulk_payment.batch.started",
-  "timestamp": "2024-01-15T10:00:00Z",
-  "data": {
-    "transactionId": "txn_abc123",
-    "batchId": "batch_001",
-    "currency": "KES",
-    "totalPayments": 100,
-    "totalAmount": 150000,
-    "status": "processing"
-  }
-}
-```
+- `GET /api/v3/bulk-payments/batches/:batchId` — current batch status and counts
+- `GET /api/v3/bulk-payments/batches/:batchId/payments` — status of each individual payment
 
-**Batch Completed**:
-```json
-{
-  "event": "bulk_payment.batch.completed",
-  "timestamp": "2024-01-15T10:15:00Z",
-  "data": {
-    "transactionId": "txn_abc123",
-    "batchId": "batch_001",
-    "currency": "KES",
-    "status": "completed",
-    "totalPayments": 100,
-    "successfulPayments": 98,
-    "failedPayments": 2,
-    "totalAmount": 150000,
-    "successAmount": 147000,
-    "failedAmount": 3000,
-    "processingTime": 900,
-    "failedPayments": [
-      {
-        "reference": "INV-045",
-        "recipientPhone": "+254700000000",
-        "amount": 1500,
-        "reason": "Invalid phone number"
-      },
-      {
-        "reference": "INV-078",
-        "recipientPhone": "+254711000000",
-        "amount": 1500,
-        "reason": "Recipient account unavailable"
-      }
-    ]
-  }
-}
-```
-
-**Transaction Completed**:
-```json
-{
-  "event": "bulk_payment.transaction.completed",
-  "timestamp": "2024-01-15T10:20:00Z",
-  "data": {
-    "transactionId": "txn_abc123",
-    "transactionName": "January Payroll",
-    "status": "completed",
-    "totalBatches": 3,
-    "completedBatches": 3,
-    "failedBatches": 0,
-    "totalPayments": 150,
-    "successfulPayments": 145,
-    "failedPayments": 5,
-    "currencyBreakdown": {
-      "KES": {
-        "totalAmount": 150000,
-        "successAmount": 147000,
-        "successful": 98,
-        "failed": 2
-      },
-      "UGX": {
-        "totalAmount": 15000000,
-        "successAmount": 14500000,
-        "successful": 29,
-        "failed": 1
-      },
-      "TZS": {
-        "totalAmount": 500000,
-        "successAmount": 460000,
-        "successful": 18,
-        "failed": 2
-      }
-    }
-  }
-}
-```
-
-**Key Points**:
-- Webhooks sent per batch and per transaction
-- Include failed payment details
-- HMAC signature for verification
-- Automatic retry on webhook failure
-- Detailed breakdown by currency
+See [Webhooks](/v3/essentials/webhooks) for the withdrawal event payload structure and signature verification.
 
 ---
 

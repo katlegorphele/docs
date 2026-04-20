@@ -1,71 +1,53 @@
 ---
 title: "Rate Limits"
-description: "Understanding Kotani Pay API rate limits and best practices"
+description: "How the Kotani Pay API rate limits requests and what to expect when you exceed them"
 ---
 
-To ensure fair usage and system stability, the Kotani Pay API implements rate limiting on all endpoints.
+The Kotani Pay API uses a Redis-backed sliding window rate limiter applied per endpoint, per API key. Limits are not fixed globally — they vary by endpoint sensitivity and are configurable per integrator.
 
-## Rate Limit Structure
+---
 
-The API uses a sliding window rate limit with the following defaults:
+## Limit Tiers
 
-- **Production**: 1000 requests per minute per API key
-- **Sandbox**: 100 requests per minute per API key
+Endpoints are grouped into three tiers:
 
-## Rate Limit Headers
+| Tier | Applied to |
+|------|------------|
+| **General** | Standard create and update operations |
+| **Sensitive** | Authentication and security-critical endpoints |
+| **Read-only** | GET and list endpoints |
 
-Every API response includes rate limit information in the headers:
+Each tier has a different request limit and window. A separate burst limit also applies across all tiers — it catches rapid-fire requests within any 5-second window regardless of the per-minute count.
 
-```http
-X-RateLimit-Limit: 1000
-X-RateLimit-Remaining: 999
-X-RateLimit-Reset: 1642234800
-```
+---
 
-| Header                  | Description                                              |
-| ----------------------- | -------------------------------------------------------- |
-| `X-RateLimit-Limit`     | Maximum number of requests allowed in the current window |
-| `X-RateLimit-Remaining` | Number of requests remaining in the current window       |
-| `X-RateLimit-Reset`     | Unix timestamp when the rate limit window resets         |
+## When You're Rate Limited
 
-## Handling Rate Limits
-
-When you exceed the rate limit, the API returns a `429 Too Many Requests` response:
+When you exceed a limit, the API returns `429 Too Many Requests`:
 
 ```json
 {
-  "status": "error",
-  "message": "Rate limit exceeded",
-  "error_code": "RATE_LIMITED",
-  "retry_after": 60
-}
-```
-
-## Best Practices
-
-1. **Monitor rate limit headers** in your responses
-2. **Implement exponential backoff** when rate limited
-3. **Cache responses** when possible to reduce API calls
-4. **Batch operations** where the API supports it
-5. **Use webhooks** instead of polling for status updates
-
-## Example: Handling Rate Limits
-
-```javascript
-async function makeAPIRequest(url, options) {
-  try {
-    const response = await fetch(url, options);
-
-    if (response.status === 429) {
-      const retryAfter = response.headers.get("Retry-After") || 60;
-      await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
-      return makeAPIRequest(url, options); // Retry
-    }
-
-    return response;
-  } catch (error) {
-    console.error("API request failed:", error);
-    throw error;
+  "statusCode": 429,
+  "message": "Too many requests. You have exceeded the limit of N requests per X seconds. Please wait before trying again.",
+  "error": "Too Many Requests",
+  "data": {
+    "retryAfter": 60
   }
 }
 ```
+
+The `data.retryAfter` value is in seconds. Wait at least that long before retrying.
+
+---
+
+## Integrator Exemptions
+
+High-volume integrators can be placed on an exempt list that bypasses rate limiting entirely. Contact your account manager if your use case requires this.
+
+---
+
+## Best Practices
+
+- Use webhooks instead of polling for transaction status updates — polling is the most common cause of hitting rate limits
+- If you need to check many records, use list endpoints with pagination rather than looping individual lookups
+- Back off and retry when you receive a `429` — use the `retryAfter` value from the response

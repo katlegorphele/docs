@@ -39,16 +39,23 @@
               },
               {
                 "group": "Getting Started",
-                "pages": ["v3/overview", "v3/quickstart", "v3/development"]
+                "pages": [
+                  "v3/overview",
+                  "v3/quickstart",
+                  "v3/getting-started/dashboard-login",
+                  "v3/getting-started/api-keys",
+                  "v3/development"
+                ]
               },
               {
                 "group": "Essentials",
                 "pages": [
-                  "v3/essentials/error-handling",
-                  "v3/essentials/rate-limits",
-                  "v3/essentials/transaction-statuses",
+                  "v3/essentials/balances-and-settlement",
                   "v3/essentials/webhooks",
-                  "v3/essentials/offramp-refunds"
+                  "v3/essentials/offramp-refunds",
+                  "v3/essentials/transaction-statuses",
+                  "v3/essentials/error-handling",
+                  "v3/essentials/rate-limits"
                 ]
               },
               {

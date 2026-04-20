@@ -1,146 +1,153 @@
 ---
 title: "Quickstart"
-description: "Get started with Kotani Pay API v3 in minutes"
+description: "From zero to your first API call in minutes"
 ---
 
-## Get started with Kotani Pay API v3
+## Prerequisites
 
-Follow these steps to start integrating with Kotani Pay's payment platform.
+Your email must be registered as a Kotani Pay integrator before you can authenticate. You can also log in to the dashboard at [backoffice.kotanipay.com](https://backoffice.kotanipay.com) to manage your account, view transactions, and configure settings — the dashboard uses a separate email + password login and is independent from the API authentication flow below.
 
-## 🚀 Try the API with Postman
+---
 
-Test our API endpoints instantly using our comprehensive Postman collection. Fork the collection to your workspace and start experimenting with real API calls without writing any code.
+## 1. Get a JWT via Magic Link
 
-<Card
-  title="Run in Postman"
-  icon="external-link"
-  href="https://app.getpostman.com/run-collection/30841547-726e952e-e744-45ec-9204-1df4aba5e919?action=collection%2Ffork&source=rip_markdown"
->
-  Fork the complete Kotani Pay API collection with 57+ endpoints and
-  pre-configured environments
-</Card>
+The API uses an email-based magic link flow. No password involved.
 
-<AccordionGroup>
-  <Accordion title="What's included in the collection" icon="package">
-    - **Complete API Coverage**: All 57 endpoints organized by functionality
-    - **Environment Variables**: Pre-configured sandbox and production environments  
-    - **Authentication Flow**: Automated token management and API key setup
-    - **Sample Data**: Example request bodies and expected responses
-    - **Workflow Examples**: Common integration patterns and use cases
-  </Accordion>
+```bash
+curl -X POST https://sandbox-api.kotanipay.com/api/v3/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@yourcompany.com"}'
+```
 
-  <Accordion title="How to fork and use the collection" icon="code-fork">
-    1. **Fork the collection**: Click the "Run in Postman" button above
-    2. **Choose your workspace**: Select or create a Postman workspace  
-    3. **Import environments**: Both sandbox and production environments will be imported
-    4. **Set up credentials**: Add your API keys to the environment variables
-    5. **Start testing**: Begin with the Health Check endpoint to verify setup
+Response:
 
-    <Warning>
-      Make sure to use the **sandbox environment** for testing to avoid processing real transactions.
-    </Warning>
+```json
+{ "message": "login magic link sent to your email" }
+```
 
-  </Accordion>
+Check your inbox and click the **Login to Kotani Pay** button. That link hits `GET /api/v3/auth/verify?hash=...` and returns:
 
-  <Accordion title="Environment setup guide" icon="settings">
-    After forking, update these environment variables in Postman:
+```json
+{
+  "data": {
+    "user_id": "abc123",
+    "session_id": "sess_xyz",
+    "token_id": "tok_abc",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
 
-    **Sandbox Environment:**
-    - `base_url`: `https://sandbox-api.kotanipay.com`
-    - `api_key`: Your sandbox API key (get this from Step 1 below)
-    - `jwt_token`: Will be auto-populated after login
+The `token` expires in **1 hour**. Use [`GET /api/v3/auth/refresh-token`](/v3/api-reference/authentication/refresh-token) with the `refresh_token` to extend your session without re-doing the magic link flow.
 
-    **Production Environment:**
-    - `base_url`: `https://api.kotanipay.com`
-    - `api_key`: Your production API key
-    - `jwt_token`: Will be auto-populated after login
+---
 
-  </Accordion>
-</AccordionGroup>
+## 2. Generate Your API Key
 
-### Step 1: Create an integrator account
+Use the JWT to generate an API key. Two options:
 
-<AccordionGroup>
-  <Accordion title="Register your business" icon="user-plus">
-    Create an integrator account to access the Kotani Pay API platform. Use the
-    [Create Integrator](/v3/api-reference/authentication/login) endpoint to
-    register your business.
-  </Accordion>
-  <Accordion title="Get your API credentials" icon="key">
-    1. Login to your account using the [Authentication
-       Login](/v3/api-reference/authentication/login) endpoint 2. Generate an API
-       key using the [Generate API
-       Key](/v3/api-reference/authentication/generate-key) endpoint 3. Store your
-       credentials securely
+**Key only** (no secret):
 
-    <Tip>
-      Keep your API keys secure and never expose them in client-side code.
-    </Tip>
+```bash
+curl -X GET https://sandbox-api.kotanipay.com/api/v3/auth/api-key \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
 
-  </Accordion>
-</AccordionGroup>
+**Key + secret** (for end-to-end payload verification):
 
-### Step 2: Test the integration
+```bash
+curl -X GET https://sandbox-api.kotanipay.com/api/v3/auth/api-key/secure \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
 
-<AccordionGroup>
-  <Accordion title="Use the sandbox environment" icon="flask">
-    Test your integration using our sandbox environment:
+Both return:
 
-    **Base URL**: `https://sandbox-api.kotanipay.com`
+```json
+{
+  "message": "Api-key generated successfully",
+  "data": {
+    "key": "eyJ1c2VyX2lkIjoiLi4uIn0=.a1b2c3d4e5f6...",
+    "secret": "7f3a9b2c1d4e5f6..."
+  }
+}
+```
 
-    Start with the [Health Check](/v3/api-reference/system/health) endpoint to verify connectivity.
+The `/api-key` endpoint returns only `key`. The `/api-key/secure` endpoint returns both `key` and `secret`. Store them securely. See [API Keys](/v3/getting-started/api-keys) for key types and permissions.
 
-  </Accordion>
-  <Accordion title="Make your first deposit" icon="credit-card">
-    Try initiating a deposit using the [Initiate Deposit](/v3/api-reference/deposits/initiate) endpoint.
+---
 
-    1. Create a mobile money customer
-    2. Initiate a deposit request
-    3. Check the deposit status
-    4. Handle webhook notifications
+## 3. Make Your First Call
 
-    <Tip>
-      Start with small amounts for testing\!
-    </Tip>
+Use the API key in the `Authorization: Bearer` header:
 
-  </Accordion>
-</AccordionGroup>
+```bash
+curl -X GET https://sandbox-api.kotanipay.com/api/v3/health \
+  -H "Authorization: Bearer <your-api-key>"
+```
 
-### Step 3: Go live
+Expected response:
 
-<Accordion title="Deploy to production" icon="rocket">
-  1. Switch to the production base URL: `https://api.kotanipay.com ` 2. Update
-  your API credentials for production 3. Configure your webhook endpoints 4.
-  Start processing real transactions
-</Accordion>
+```json
+{
+  "status": "ok",
+  "timestamp": "2025-01-01T00:00:00Z"
+}
+```
 
-## Next steps
+---
 
-Explore our comprehensive API documentation:
+## 4. Fund Your Payout Balance (Before Withdrawals)
+
+Deposits credit your **deposit balance**. Withdrawals draw from your **payout balance**. These are separate — you need to transfer between them before you can disburse.
+
+In the dashboard: **Wallets → Transfer Deposit Balance**
+
+See [Balances & Settlement](/v3/essentials/balances-and-settlement) for the full explanation.
+
+---
+
+## 5. Set Up Webhooks
+
+Configure your webhook URL so Kotani Pay can notify you when transactions update:
+
+1. Log in to the dashboard → **Settings**
+2. Enter your HTTPS endpoint URL
+3. Select the events you want (or leave all selected)
+4. Copy the generated signing secret and save it as an environment variable
+
+Verify every incoming webhook using the `X-Kotani-Signature` header. See [Webhooks](/v3/essentials/webhooks) for the verification code.
+
+---
+
+## 6. Go Live
+
+When you're ready for production:
+
+1. Switch the base URL to `https://api.kotanipay.com`
+2. Repeat the magic link login against production to get a production JWT
+3. Generate a production API key
+4. Update your webhook endpoint to point to your production server
+
+<Warning>
+  Always use sandbox credentials against the sandbox URL and production credentials against the production URL. Never mix them.
+</Warning>
+
+---
+
+## Explore Further
 
 <CardGroup cols={2}>
-  <Card title="API Reference" icon="code" href="/v3/api-reference/introduction">
-    Complete API endpoint documentation
+  <Card title="Deposit Flows" icon="arrow-down" href="/v3/flows/deposit-flow">
+    How mobile money, bank, and card deposits work end to end
   </Card>
-  <Card
-    title="Deposits"
-    icon="arrow-down"
-    href="/v3/api-reference/deposits/initiate"
-  >
-    Learn how to handle deposits
+  <Card title="Withdrawal Flows" icon="arrow-up" href="/v3/flows/withdrawal-flow">
+    How disbursements work and what happens when they fail
   </Card>
-  <Card
-    title="Payouts"
-    icon="arrow-up"
-    href="/v3/api-reference/payouts/initiate"
-  >
-    Process payouts to customers
+  <Card title="Webhooks" icon="webhook" href="/v3/essentials/webhooks">
+    Event types, payload structures, and signature verification
   </Card>
-  <Card
-    title="Webhooks"
-    icon="webhook"
-    href="/v3/api-reference/webhooks/notifications"
-  >
-    Set up real-time notifications
+  <Card title="Run in Postman" icon="external-link" href="https://app.getpostman.com/run-collection/30841547-726e952e-e744-45ec-9204-1df4aba5e919?action=collection%2Ffork&source=rip_markdown">
+    Fork the full API collection to test every endpoint
   </Card>
 </CardGroup>

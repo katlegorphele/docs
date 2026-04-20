@@ -1,103 +1,65 @@
 ---
 title: "Kotani Pay API v3"
-description: "Digital asset transactions using local payment channels"
 ---
 
-# Welcome to Kotani Pay API v3
+Kotani Pay connects your application to local payment channels across Africa — mobile money networks (M-PESA, MTN Money, Airtel Money, Orange Money), bank transfers, and blockchain networks. Use it to collect payments from users, disburse funds to them, or convert between fiat and crypto.
 
-Kotani Pay enables businesses to purchase digital assets using local payment channels such as mobile money and bank transfers. Our solution supports various use cases including remittance, forex arbitrage, lending, insurance, savings, social protection, business financing, and gig work.
-
-## Get Started
+## Core Operations
 
 <CardGroup cols={2}>
-  <Card title="Quick Start Guide" icon="rocket" href="/v3/quickstart">
-    Get up and running with Kotani Pay API in minutes.
+  <Card title="Deposits" icon="arrow-down" href="/v3/api-reference/deposits/initiate">
+    Collect mobile money, bank, and card payments from users
   </Card>
-  <Card
-    title="Run in Postman"
-    icon="external-link"
-    href="https://app.getpostman.com/run-collection/30841547-726e952e-e744-45ec-9204-1df4aba5e919?action=collection%2Ffork&source=rip_markdown"
-  >
-    Fork our complete API collection with 57+ endpoints and test environments.
+  <Card title="Withdrawals" icon="arrow-up" href="/v3/api-reference/withdrawals/mobile-money">
+    Disburse funds to mobile money wallets and bank accounts
+  </Card>
+  <Card title="Onramp" icon="coins" href="/v3/api-reference/onramp/create">
+    Accept fiat payment and deliver crypto to a wallet address
+  </Card>
+  <Card title="Offramp" icon="money-bill" href="/v3/api-reference/offramp/create">
+    Accept crypto and disburse fiat via mobile money or bank transfer
   </Card>
 </CardGroup>
 
-## Core Features
+## Getting Started
 
-<Columns cols={2}>
-  <Card title="Deposits" icon="arrow-down" href="/v3/api-reference/deposits/initiate">
-    Accept payments via mobile money, bank transfers, and card payments.
-  </Card>
+<Steps>
+  <Step title="Access the dashboard">
+    Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com) with your email and password. If you're logging in for the first time, use the Forgot Password flow to set your password via OTP.
 
-{" "}
+    [Dashboard login guide →](/v3/getting-started/dashboard-login)
+  </Step>
+  <Step title="Get your API key">
+    Call `POST /auth/login` with your email to receive a magic link. Click it to get a JWT, then call `GET /auth/api-key/secure` to generate your API key.
 
-<Card title="Payouts" icon="arrow-up" href="/v3/api-reference/payouts/initiate">
-  Send money to customers using various payment channels.
-</Card>
+    [API key guide →](/v3/getting-started/api-keys)
+  </Step>
+  <Step title="Make your first API call">
+    Point requests at the sandbox URL and include your API key in the `Authorization: Bearer` header.
 
-{" "}
+    [Quickstart →](/v3/quickstart)
+  </Step>
+</Steps>
+
+## Environments
+
+| Environment | Base URL |
+|-------------|----------|
+| **Sandbox** | `https://sandbox-api.kotanipay.com` |
+| **Production** | `https://api.kotanipay.com` |
+
+Use sandbox for all development and testing. No real money moves in sandbox.
+
+## Try It Now
 
 <Card
-  title="Authentication"
-  icon="shield"
-  href="/v3/api-reference/authentication/login"
+  title="Run in Postman"
+  icon="external-link"
+  href="https://app.getpostman.com/run-collection/30841547-726e952e-e744-45ec-9204-1df4aba5e919?action=collection%2Ffork&source=rip_markdown"
 >
-  Secure API access with JWT tokens and API keys.
+  Fork the full API collection with pre-configured environments
 </Card>
-
-  <Card title="Webhooks" icon="webhook" href="/v3/api-reference/webhooks/notifications">
-    Real-time transaction status updates and notifications.
-  </Card>
-</Columns>
 
 ## Use Cases
 
-Kotani Pay supports a wide range of financial services:
-
-<Columns cols={2}>
-  <Card title="Remittance" icon="globe" href="/v3/api-reference/deposits/initiate">
-    Cross-border money transfers and international payments.
-  </Card>
-
-{" "}
-
-<Card
-  title="Forex Arbitrage"
-  icon="chart-line"
-  href="/v3/api-reference/payouts/initiate"
->
-  Currency exchange and trading opportunities.
-</Card>
-
-{" "}
-
-<Card
-  title="Digital Lending"
-  icon="credit-card"
-  href="/v3/api-reference/deposits/initiate"
->
-  Credit services and loan disbursements.
-</Card>
-
-  <Card title="Insurance & Savings" icon="shield-check" href="/v3/api-reference/payouts/initiate">
-    Protection products and secure savings solutions.
-  </Card>
-</Columns>
-
-## API Environments
-
-<Card
-  title="Sandbox Environment"
-  icon="flask"
-  href="/v3/api-reference/introduction"
->
-  Test your integration safely: `https://sandbox-api.kotanipay.com`
-</Card>
-
-<Card
-  title="Crypto Bridge Tester"
-  icon="external-link"
-  href="https://sandbox-api.kotanipay.com/crypto-bridge-tester"
->
-  Test crypto bridge transactions: `https://sandbox-api.kotanipay.com/crypto-bridge-tester`
-</Card>
+Kotani Pay is used for remittance, forex arbitrage, digital lending, insurance, savings, social protection, business financing, gig worker payments, and more. If you're moving money to or from Africa via local channels, this API covers it.

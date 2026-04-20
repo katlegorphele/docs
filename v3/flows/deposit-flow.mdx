@@ -3,6 +3,35 @@ title: "Deposit Flows"
 description: "Complete sequence diagrams for all deposit transaction types"
 ---
 
+## Monitoring Deposits from the Dashboard
+
+After initiating deposits via the API, you can track them in real time from the dashboard.
+
+1. Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com)
+2. Use the **country and currency selector in the top right** to filter by the relevant market (e.g., Kenya / KES)
+3. Navigate to **Collections** in the left sidebar to see all deposit transactions for that currency
+
+<img
+  src="/images/dashboard/deposits-list.png"
+  alt="Deposits list in the dashboard with country/currency filter active"
+/>
+
+Each row shows the transaction reference, amount, status, customer, and timestamp. Click any row to see the full detail including provider reference and callback history.
+
+<Note>
+  If you don't see a transaction, check that the correct country/currency is selected in the top-right filter — transactions are scoped to the active wallet.
+</Note>
+
+---
+
+## How Deposit Balances Work
+
+Successful deposits are reconciled by a background job and credited to your **deposit balance** (not payout balance). To use collected funds for withdrawals, you must first transfer them to your payout balance.
+
+See [Balances & Settlement](/v3/essentials/balances-and-settlement) for how to do this.
+
+---
+
 ## Mobile Money Deposit Flow
 
 Collect payments via mobile money wallets (M-PESA, MTN Money, Airtel Money, etc.)

@@ -3,82 +3,137 @@ title: "Webhook Notifications"
 description: "Receive real-time notifications about transaction status updates and other events."
 ---
 
-Kotani Pay sends webhook notifications to inform your application about key lifecycle events—transaction status changes, payment confirmations, compliance updates, and scheduled system announcements. Use these callbacks to drive your automations instead of polling for status.
+Kotani Pay pushes notifications to your server when key events happen — transaction status changes, refund outcomes, KYC updates, and system notices.
 
-## Supported Events
+---
 
-Configure one webhook endpoint per environment from the dashboard and opt in to any combination of events:
+## Two Delivery Modes
 
-- **Transaction Status Updates** – Deposit, withdrawal, or transfer status changes (e.g., `PENDING` → `COMPLETED`)
-- **Payment Confirmations** – Real-time acknowledgements when a payment settles on- or off-chain
-- **KYC Status Changes** – Triggers when a customer's verification outcome changes
-- **System Events** – Low-volume operational notices and maintenance alerts
+How notifications are delivered depends on whether a webhook secret is configured on your account.
 
-### Event Types
+---
 
-The following event types are available:
+### Signed webhooks
 
-**Transaction Events:**
+When a webhook secret is configured, all events are delivered through the signed system. Each `POST` request includes:
 
-- `transaction.deposit.status.updated` - Deposit transaction status changed
-- `transaction.withdrawal.status.updated` - Withdrawal transaction status changed
-- `transaction.onramp.status.updated` - On-ramp transaction status changed
-- `transaction.offramp.status.updated` - Off-ramp transaction status changed
-- `transaction.status.updated` - _(Deprecated)_ Generic transaction status update
+| Header | Value |
+|--------|-------|
+| `X-Kotani-Signature` | `sha256=<hmac>` — use this to verify authenticity |
+| `X-Kotani-Event` | The event name (e.g. `transaction.deposit.status.updated`) |
+| `X-Kotani-Integrator` | Your integrator ID |
+| `Content-Type` | `application/json` |
 
-**Payment Events:**
-
-- `payment.confirmed` - Payment has been confirmed
-
-**KYC Events:**
-
-- `kyc.status.changed` - Customer verification status changed
-
-**Refund Events:**
-
-- `refund.completed` - Crypto refund successfully sent back to integrator (transaction status → `REVERSED`)
-- `refund.failed` - Refund exhausted all retry attempts — manual intervention required
-- `refund.lightning.invoice_needed` - Lightning offramp needs a bolt11 refund invoice submitted
-
-**System Events:**
-
-- `system.event` - Operational notices and maintenance alerts
-
-## Payload Format
-
-Webhooks are sent as HTTP `POST` requests with a JSON payload. The request body includes the event name, data payload, and a convenience copy of the signature. The canonical signature is delivered in the `X-Kotani-Signature` header.
+The body is always wrapped in this envelope:
 
 ```json
 {
   "event": "transaction.deposit.status.updated",
   "data": {
-    "referenceId": "ABC123",
     "status": "SUCCESSFUL",
-    "timestamp": "2025-01-01T00:00:00Z"
+    "reference_id": "order-abc-001",
+    "reference_number": "MP250101001",
+    "id": "64a1b2c3d4e5f6a7b8c9d0e1",
+    "amount": 1000,
+    "wallet_id": "64a1b2c3d4e5f6a7b8c9d0e2",
+    "callback_url": "https://your-server.com/webhook",
+    "created_at": "2025-01-01T00:00:00.000Z",
+    "transaction_amount": 975,
+    "transaction_cost": 25,
+    "customer_key": "cust_abc123",
+    "telco_id": "OEI2AK4D9X",
+    "timestamp": "2025-01-01T00:01:30.000Z"
   },
-  "signature": "sha256=abc123..."
+  "signature": "sha256=a1b2c3d4e5f6..."
 }
 ```
 
-> **Tip:** The payload's `signature` field is provided for quick sanity checks, but the header is the source of truth for verification.
+The `signature` field in the body mirrors `X-Kotani-Signature` — the **header is the source of truth** for verification.
+
+---
+
+### Direct callbacks
+
+If no webhook secret is configured, Kotani Pay posts directly to the `callbackUrl` set on each transaction at the time it was created. These requests:
+
+- Are sent as `POST` with a JSON body
+- Do **not** include `X-Kotani-Signature`, `X-Kotani-Event`, or `X-Kotani-Integrator` headers
+- Contain the transaction data fields **directly** in the body — no `event` or `signature` wrapper
+
+Example deposit callback body:
+
+```json
+{
+  "status": "SUCCESSFUL",
+  "reference_id": "order-abc-001",
+  "reference_number": "MP250101001",
+  "id": "64a1b2c3d4e5f6a7b8c9d0e1",
+  "amount": 1000,
+  "wallet_id": "64a1b2c3d4e5f6a7b8c9d0e2",
+  "callback_url": "https://your-server.com/webhook",
+  "created_at": "2025-01-01T00:00:00.000Z",
+  "transaction_amount": 975,
+  "transaction_cost": 25,
+  "customer_key": "cust_abc123",
+  "telco_id": "OEI2AK4D9X"
+}
+```
+
+Example withdrawal callback body:
+
+```json
+{
+  "status": "SUCCESSFUL",
+  "referenceId": "payout-xyz-001",
+  "referenceNumber": "MW250101001",
+  "id": "64a1b2c3d4e5f6a7b8c9d0e3",
+  "amount": 500,
+  "walletId": "64a1b2c3d4e5f6a7b8c9d0e2",
+  "callbackUrl": "https://your-server.com/webhook",
+  "created_at": "2025-01-01T00:00:00.000Z",
+  "transactionAmount": 480,
+  "transactionCost": 20,
+  "customerKey": "cust_abc123",
+  "telcoId": "OEI2AK4D9X"
+}
+```
+
+Configure a webhook secret in **Settings** to switch to signed webhooks.
+
+---
+
+## Supported Events
+
+The following events are fired by the signed webhook system.
+
+| Event | When it fires |
+|-------|---------------|
+| `transaction.deposit.status.updated` | A deposit transaction changes status |
+| `transaction.withdrawal.status.updated` | A withdrawal transaction changes status |
+| `transaction.onramp.status.updated` | An onramp (fiat→crypto) transaction changes status |
+| `transaction.offramp.status.updated` | An offramp (crypto→fiat) transaction changes status |
+| `kyc.status.changed` | A customer's KYC verification outcome changes |
+| `refund.completed` | Crypto refund successfully sent back to the sender |
+| `refund.failed` | Refund exhausted all retry attempts — manual intervention required |
+| `refund.lightning.invoice_needed` | Lightning offramp needs a bolt11 invoice to process the refund |
+| `system.event` | Operational notices and maintenance alerts |
+| `transaction.status.updated` | _(Deprecated)_ Generic status update — use the specific events above |
+
+---
 
 ## Verifying Signatures
 
-Every payload is signed with your dashboard-configured webhook secret. Validate the signature before acting on the event:
+Always verify the `X-Kotani-Signature` header before processing the event.
 
-1. Parse the JSON payload from the request body.
-2. **Remove the `signature` field** from the parsed payload.
-3. Compute an HMAC-SHA256 digest of the remaining payload: `sha256=HMAC(secret, JSON.stringify(payloadWithoutSignature))`.
-4. Compare the digest with the `X-Kotani-Signature` header using a timing-safe comparison.
+1. Parse the JSON body.
+2. **Remove the `signature` field** from the parsed object.
+3. Compute `sha256=HMAC-SHA256(secret, JSON.stringify({event, data}))`.
+4. Compare with `X-Kotani-Signature` using a timing-safe comparison.
 
-> **Important:** The signature is computed from only the `event` and `data` fields. You must exclude the `signature` field itself when verifying.
+```typescript
+import crypto from 'crypto';
 
-### Node.js helper
-
-```ts
-import crypto from "crypto";
-
-export function verifyWebhook({
+function verifyWebhook({
   secret,
   payload,
   headerSignature,
@@ -86,20 +141,18 @@ export function verifyWebhook({
   secret: string;
   payload: { event: string; data: Record<string, any>; signature?: string };
   headerSignature: string;
-}) {
-  // Remove the signature field from the payload
+}): boolean {
   const { signature, ...payloadWithoutSignature } = payload;
-
-  // Compute HMAC-SHA256 from the payload without signature
-  const payloadString = JSON.stringify(payloadWithoutSignature);
   const computed =
-    "sha256=" +
-    crypto.createHmac("sha256", secret).update(payloadString).digest("hex");
-
+    'sha256=' +
+    crypto
+      .createHmac('sha256', secret)
+      .update(JSON.stringify(payloadWithoutSignature))
+      .digest('hex');
   try {
     return crypto.timingSafeEqual(
       Buffer.from(computed),
-      Buffer.from(headerSignature.trim())
+      Buffer.from(headerSignature.trim()),
     );
   } catch {
     return false;
@@ -107,42 +160,320 @@ export function verifyWebhook({
 }
 ```
 
-### Example usage
-
-```ts
-import express from "express";
+```typescript
+import express from 'express';
 
 const app = express();
 
-app.post("/webhook", express.json(), (req, res) => {
-  const headerSignature = req.headers["x-kotani-signature"] as string;
-  const webhookSecret = process.env.KOTANI_WEBHOOK_SECRET;
-
+app.post('/webhook', express.json(), (req, res) => {
   const isValid = verifyWebhook({
-    secret: webhookSecret,
+    secret: process.env.KOTANI_WEBHOOK_SECRET!,
     payload: req.body,
-    headerSignature,
+    headerSignature: req.headers['x-kotani-signature'] as string,
   });
 
-  if (!isValid) {
-    return res.status(401).send("Invalid signature");
-  }
+  if (!isValid) return res.status(401).send('Invalid signature');
 
-  // Process the webhook event
-  console.log("Event:", req.body.event);
-  console.log("Data:", req.body.data);
+  const { event, data } = req.body;
+  // handle event...
 
-  res.status(200).send("OK");
+  res.status(200).send('OK');
 });
 ```
 
+---
+
+## Event Payloads
+
+Each event type carries a different `data` shape. **Deposits use `snake_case` field names; withdrawals, onramp, and offramp use `camelCase`.**
+
+---
+
+### `transaction.deposit.status.updated`
+
+```json
+{
+  "event": "transaction.deposit.status.updated",
+  "data": {
+    "status": "SUCCESSFUL",
+    "reference_id": "order-abc-001",
+    "reference_number": "MP250101001",
+    "id": "64a1b2c3d4e5f6a7b8c9d0e1",
+    "amount": 1000,
+    "wallet_id": "64a1b2c3d4e5f6a7b8c9d0e2",
+    "callback_url": "https://your-server.com/webhook",
+    "created_at": "2025-01-01T00:00:00.000Z",
+    "transaction_amount": 975,
+    "transaction_cost": 25,
+    "customer_key": "cust_abc123",
+    "telco_id": "OEI2AK4D9X",
+    "timestamp": "2025-01-01T00:01:30.000Z"
+  },
+  "signature": "sha256=a1b2c3d4e5f6..."
+}
+```
+
+For non-successful deposits the payload also includes all four error fields (they may be empty strings if no detail is available):
+
+```json
+{
+  "error_message": "Insufficient funds",
+  "error_description": "The customer does not have enough funds",
+  "error_code": "INSUFFICIENT_FUNDS",
+  "transactionError": "..."
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `status` | Current transaction status |
+| `reference_id` | Your reference ID (or system-generated) |
+| `amount` | Amount requested |
+| `transaction_amount` | Amount actually collected (after fees) |
+| `transaction_cost` | Fee charged |
+| `customer_key` | The customer identifier |
+| `telco_id` | Mobile money network (e.g. `MPESA`, `MTN`) |
+| `confirmation_id` | Provider transaction reference (e.g. M-Pesa confirmation code) |
+
+---
+
+### `transaction.withdrawal.status.updated`
+
+```json
+{
+  "event": "transaction.withdrawal.status.updated",
+  "data": {
+    "status": "SUCCESSFUL",
+    "referenceId": "payout-xyz-001",
+    "referenceNumber": "MW250101001",
+    "id": "64a1b2c3d4e5f6a7b8c9d0e3",
+    "amount": 500,
+    "walletId": "64a1b2c3d4e5f6a7b8c9d0e2",
+    "callbackUrl": "https://your-server.com/webhook",
+    "created_at": "2025-01-01T00:00:00.000Z",
+    "transactionAmount": 480,
+    "transactionCost": 20,
+    "customerKey": "cust_abc123",
+    "telcoId": "MPESA",
+    "confirmationId": "OEI2AK4D9Y",
+    "timestamp": "2025-01-01T00:02:00.000Z"
+  },
+  "signature": "sha256=a1b2c3d4e5f6..."
+}
+```
+
+For failed withdrawals, also includes:
+
+```json
+{
+  "errorMessage": "Recipient number not found",
+  "transactionError": "..."
+}
+```
+
+<Note>
+  Withdrawal fields are camelCase (`referenceId`, `walletId`, `customerKey`) whereas deposit fields are snake_case (`reference_id`, `wallet_id`, `customer_key`). Handle both in your webhook handler.
+</Note>
+
+---
+
+### `transaction.onramp.status.updated`
+
+Onramp has two separate status fields — one for the fiat collection and one for the on-chain crypto transfer.
+
+```json
+{
+  "event": "transaction.onramp.status.updated",
+  "data": {
+    "referenceId": "onramp-001",
+    "depositStatus": "SUCCESSFUL",
+    "onchainStatus": "SUCCESSFUL",
+    "transactionHash": "0xabc123def456...",
+    "cryptoAmount": 0.00125,
+    "fiatAmount": 5000,
+    "rate": {
+      "from": "KES",
+      "to": "USDT",
+      "cryptoAmount": 0.00125
+    },
+    "timestamp": "2025-01-01T00:05:00.000Z"
+  },
+  "signature": "sha256=a1b2c3d4e5f6..."
+}
+```
+
+For failed onramp:
+
+```json
+{
+  "error": {
+    "message": "Crypto transfer failed after retries",
+    "code": "CRYPTO_TRANSFER_FAILED",
+    "details": {}
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `depositStatus` | Status of the fiat payment collection |
+| `onchainStatus` | Status of the crypto delivery to the wallet |
+| `transactionHash` | Blockchain transaction hash (once on-chain transfer completes) |
+| `cryptoAmount` | Amount of crypto delivered |
+| `fiatAmount` | Fiat amount collected |
+
+---
+
+### `transaction.offramp.status.updated`
+
+```json
+{
+  "event": "transaction.offramp.status.updated",
+  "data": {
+    "referenceId": "offramp-001",
+    "status": "SUCCESSFUL",
+    "onchainStatus": "SUCCESSFUL",
+    "fiatAmount": 5000,
+    "fiatTransactionAmount": 4850,
+    "cryptoAmount": 38.5,
+    "fiatCurrency": "KES",
+    "customerKey": "cust_abc123",
+    "fiatWalletId": "64a1b2c3d4e5f6a7b8c9d0e2",
+    "senderAddress": "0xabc123...",
+    "transactionHash": "0xdef456...",
+    "transactionHashAmount": 38.5,
+    "rate": {
+      "from": "USDT",
+      "to": "KES",
+      "fiatAmount": 5000
+    },
+    "escrowAddress": "0xescrow123...",
+    "usingIntegratedWallet": false,
+    "created_at": "2025-01-01T00:00:00.000Z",
+    "updated_at": "2025-01-01T00:05:00.000Z",
+    "timestamp": "2025-01-01T00:05:00.000Z"
+  },
+  "signature": "sha256=a1b2c3d4e5f6..."
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `status` | Overall offramp status |
+| `onchainStatus` | On-chain crypto receipt status |
+| `fiatAmount` | Full fiat amount before fees |
+| `fiatTransactionAmount` | Amount actually disbursed to recipient |
+| `cryptoAmount` | Crypto amount received from sender |
+| `senderAddress` | Address that sent the crypto |
+| `escrowAddress` | Kotani escrow address the crypto was sent to |
+| `usingIntegratedWallet` | Whether the platform's own wallet was used |
+
+---
+
+### `refund.completed`
+
+Fired when a crypto refund has been successfully sent back to the sender.
+
+```json
+{
+  "event": "refund.completed",
+  "data": {
+    "referenceId": "offramp-001",
+    "status": "REVERSED",
+    "refundStatus": "SUCCESSFUL",
+    "refundTransactionHash": "0xrefund123...",
+    "refundAmount": 38.5,
+    "chain": "POLYGON",
+    "token": "USDT",
+    "currency": "KES",
+    "timestamp": "2025-01-01T00:10:00.000Z"
+  },
+  "signature": "sha256=a1b2c3d4e5f6..."
+}
+```
+
+---
+
+### `refund.failed`
+
+Fired when a refund has exhausted all retry attempts. Manual intervention is required.
+
+```json
+{
+  "event": "refund.failed",
+  "data": {
+    "referenceId": "offramp-001",
+    "refundStatus": "FAILED",
+    "refundAmount": 38.5,
+    "chain": "POLYGON",
+    "token": "USDT",
+    "currency": "KES",
+    "error": "Refund failed after max retries",
+    "totalRetries": 5,
+    "timestamp": "2025-01-01T00:20:00.000Z"
+  },
+  "signature": "sha256=a1b2c3d4e5f6..."
+}
+```
+
+Contact support with the `referenceId` when you receive this — the refund cannot proceed automatically.
+
+---
+
+### `refund.lightning.invoice_needed`
+
+Fired when a Lightning offramp fails and a bolt11 invoice is needed to return the funds. You must submit an invoice before the refund can proceed.
+
+```json
+{
+  "event": "refund.lightning.invoice_needed",
+  "data": {
+    "referenceId": "offramp-lightning-001",
+    "status": "FAILED",
+    "onchainStatus": "SUCCESSFUL",
+    "refundStatus": "INVOICE_NEEDED",
+    "refundAmount": 1500000,
+    "refundAmountSats": 1500,
+    "chain": "LIGHTNING",
+    "currency": "KES",
+    "requiresAction": true,
+    "action": {
+      "type": "SUBMIT_LIGHTNING_INVOICE",
+      "description": "Submit Lightning invoice for 1500 sats to receive refund",
+      "submitUrl": "https://api.kotanipay.com/api/v3/offramp/submit-refund-invoice/offramp-lightning-001",
+      "method": "POST"
+    },
+    "timestamp": "2025-01-01T00:10:00.000Z"
+  },
+  "signature": "sha256=a1b2c3d4e5f6..."
+}
+```
+
+Submit the invoice to the `action.submitUrl`:
+
+```bash
+curl -X POST https://api.kotanipay.com/api/v3/offramp/submit-refund-invoice/offramp-lightning-001 \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"invoice": "lnbc1500n1p0..."}'
+```
+
+See [Offramp Refunds](/v3/essentials/offramp-refunds) for the full refund lifecycle.
+
+---
+
 ## Configuring Webhooks
 
-1. Log into the Kotani Pay dashboard.
-2. Navigate to **Settings → Webhooks**.
-3. Provide a publicly reachable HTTPS URL.
-4. Select the events you want to subscribe to.
-5. Copy or generate a signing secret and store it securely (e.g., an environment variable).
-6. Save your changes.
+1. Log in to the dashboard → **Settings**
+2. Enter a publicly reachable **HTTPS** endpoint URL
+3. Select the events you want to subscribe to (or leave all enabled)
+4. Copy the generated signing secret and store it securely
+5. Save
 
-You can rotate the secret at any time; remember to update your verification logic before applying the new secret in production.
+You can rotate the signing secret at any time. Update your verification logic with the new secret before applying it in production to avoid a verification gap.
+
+---
+
+## Retries
+
+If your endpoint returns a non-`2xx` response or times out, Kotani Pay retries delivery with exponential backoff — up to every 2 hours for a maximum of 24 hours. Return `200 OK` as quickly as possible and handle processing asynchronously.

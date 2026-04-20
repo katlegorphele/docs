@@ -1,0 +1,136 @@
+---
+title: "Accessing the Dashboard"
+description: "How to log in to the Kotani Pay dashboard, reset your password via OTP, and navigate the interface"
+---
+
+The Kotani Pay dashboard is your control center for monitoring transactions, managing wallets, viewing balances, and configuring your integration. It lives at [backoffice.kotanipay.com](https://backoffice.kotanipay.com).
+
+---
+
+## Logging In
+
+The dashboard uses **email and password** authentication. Go to [backoffice.kotanipay.com](https://backoffice.kotanipay.com), enter your registered email and password, and click **Sign In**.
+
+<img
+  src="/images/dashboard/login-screen.png"
+  alt="Dashboard login screen with email and password fields"
+/>
+
+<Note>
+  Your dashboard login is separate from the API authentication flow. The dashboard uses email + password. The API uses a magic link sent to your email — see [API Keys](/v3/getting-started/api-keys) for that flow.
+</Note>
+
+---
+
+## First-Time Login / Setting Your Password
+
+If your account was just created and you haven't set a password yet, use the **Forgot Password** flow below to set one. Your account email is your registered integrator email.
+
+---
+
+## Forgot Password
+
+If you don't have a password or can't remember it:
+
+<Steps>
+  <Step title="Click 'Forgot Password'">
+    On the login page, click the **Forgot Password** link.
+
+    <img
+      src="/images/dashboard/forgot-password-link.png"
+      alt="Forgot password link on the login page"
+    />
+  </Step>
+
+  <Step title="Enter your email address">
+    Enter your registered integrator email and submit. A **6-digit OTP** is sent to that email address. The code expires in **10 minutes**.
+
+    <img
+      src="/images/dashboard/forgot-password-email-entry.png"
+      alt="Enter email to receive OTP"
+    />
+  </Step>
+
+  <Step title="Check your inbox for the OTP">
+    Look for an email from Kotani Pay with your one-time password. Check spam if you don't see it within a minute.
+
+    <img
+      src="/images/dashboard/otp-email.png"
+      alt="OTP email from Kotani Pay showing the 6-digit code"
+    />
+
+    <Warning>
+      The OTP is valid for **10 minutes** only. If it expires, repeat the process to get a new one.
+    </Warning>
+  </Step>
+
+  <Step title="Enter the OTP and set your new password">
+    Back on the dashboard, enter the 6-digit code along with your new password (and confirmation). Submit to save.
+
+    <img
+      src="/images/dashboard/otp-password-entry.png"
+      alt="Form to enter OTP and set new password"
+    />
+  </Step>
+
+  <Step title="Log in with your new password">
+    Once saved, go back to the login screen and sign in with your email and the new password.
+  </Step>
+</Steps>
+
+<Tip>
+  If you don't receive the OTP email, check your spam folder or contact [support@kotanipay.com](mailto:support@kotanipay.com).
+</Tip>
+
+---
+
+## Dashboard Overview
+
+After logging in, you'll see the main dashboard. The **left sidebar** is your primary navigation.
+
+<img
+  src="/images/dashboard/dashboard-overview.png"
+  alt="Dashboard home with left sidebar navigation"
+/>
+
+| Section | What You Can Do |
+|---------|----------------|
+| **Collections** | Browse and search all deposit/collection transactions |
+| **Onramp Transactions** | Fiat-to-crypto transaction history |
+| **Payment Links** | Create and manage hosted payment links |
+| **Payouts** | Browse and search all withdrawal/disbursement transactions |
+| **Offramp Transactions** | Crypto-to-fiat transaction history |
+| **Bulk Payments** | Upload and manage bulk disbursement batches |
+| **Customers** | Create and manage mobile money customer profiles |
+| **Wallets** | View deposit and payout balances per currency, transfer between them |
+| **Crypto Wallets** | View crypto balances per chain |
+| **API Keys** | Generate and manage API keys |
+| **Settings** | Webhook URLs, account details, and configuration |
+| **Users** | Invite and manage team members who have dashboard access |
+| **Roles & Permissions** | Define roles and assign permissions to dashboard users |
+
+---
+
+## Country & Currency Filter
+
+In the **top-right corner** of the dashboard, there is a **country and currency selector**. This filters all transaction lists and balance views to show only records for that country/currency combination.
+
+<img
+  src="/images/dashboard/country-currency-selector.png"
+  alt="Country and currency selector in the top-right corner of the dashboard"
+/>
+
+For example, selecting **Kenya / KES** shows only KES transactions and the KES fiat wallet. If you operate in multiple countries, switch between them here to see the full picture.
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Generate API Keys" icon="key" href="/v3/getting-started/api-keys">
+    Set up API keys to authenticate your server-side integration
+  </Card>
+  <Card title="Balances & Settlement" icon="wallet" href="/v3/essentials/balances-and-settlement">
+    Understand deposit vs payout balances and how to settle funds
+  </Card>
+</CardGroup>
