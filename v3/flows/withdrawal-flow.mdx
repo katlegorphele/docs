@@ -1,457 +1,74 @@
 ---
-title: "Withdrawal Flows"
-description: "Disburse funds to mobile money wallets (M-PESA, MTN Money, Airtel Money, etc.)"
+title: "Withdrawal Flow"
+description: "How to disburse funds to customers via mobile money or bank transfer"
 ---
 
-## Before You Start: Payout Balance
+A withdrawal is a disbursement — money moves from your Kotani Pay payout balance to a customer's mobile money wallet or bank account.
 
-Withdrawals debit your **payout balance**, not your deposit balance. These are two separate buckets. If your payout balance is zero, the API will return an insufficient funds error even if you have a healthy deposit balance.
-
-To fund your payout balance:
-- **Dashboard**: Fiat Wallets → click **Transfer Deposit Balance** on the relevant wallet
-- **API**: `POST /api/v3/wallets/fiat/transfer-deposit-balance`
-
-<img
-  src="/images/dashboard/transfer-deposit-balance.png"
-  alt="Transfer Deposit Balance button on the fiat wallet card"
-/>
-
-See [Balances & Settlement](/v3/essentials/balances-and-settlement) for the full explanation including the settlement process.
+<Warning>
+Your **payout balance** must have funds before you can disburse. If it doesn't, transfer from your deposit balance first — see [Balances & Settlement](/v3/essentials/balances-and-settlement).
+</Warning>
 
 ---
 
-## Monitoring Withdrawals from the Dashboard
+## Before You Start
+
+- An API key — see [API Keys](/v3/getting-started/api-keys)
+- A funded payout balance in the disbursement currency
+- A customer record for the recipient — see [Create Customer](/v3/api-reference/customers/mobile-money/create)
+- A `callbackUrl` on your server
+
+---
+
+## Mobile Money Withdrawal
+
+**1. Create the customer** if you haven't already. The customer record holds the recipient's phone number and network details.
+
+**2. Initiate the withdrawal** — call [POST /api/v3/withdraw/mobile-money](/v3/api-reference/withdrawals/mobile-money) with your `callbackUrl`. The API responds immediately with a `PENDING` transaction. Your payout balance is debited at this point.
+
+**3. The recipient receives funds.** If the disbursement succeeds, the customer receives an SMS confirmation from the mobile money network.
+
+**4. Kotani Pay notifies you** via your `callbackUrl` when the transaction settles:
+- `SUCCESSFUL` — funds delivered to the recipient
+- `FAILED` — disbursement failed (invalid number, network error, etc.); your payout balance is **automatically reversed**
+
+<Note>
+If you have a webhook secret configured, the callback arrives in a signed envelope with `X-Kotani-Signature`, `X-Kotani-Event`, and `X-Kotani-Integrator` headers. Without a secret, the transaction fields are posted directly to your `callbackUrl`. See [Webhooks](/v3/essentials/webhooks).
+</Note>
+
+**5. Poll for status** if needed — [GET /api/v3/withdraw/status/:reference_id](/v3/api-reference/withdrawals/mobile-money-status).
+
+---
+
+## Kenya-Specific Withdrawals
+
+Two additional disbursement methods are available for Kenya:
+
+- **Lipa na M-Pesa** — sends to a till number or triggers an STK push — [POST /api/v3/withdraw/lipa-na-mpesa](/v3/api-reference/withdrawals/lipa-na-mpesa)
+- **Paybill** — sends to a paybill number with an account reference — [POST /api/v3/withdraw/paybill](/v3/api-reference/withdrawals/paybill)
+
+The flow is the same — initiate, wait for callback, poll if needed.
+
+---
+
+## Bank Withdrawal
+
+Currently supported in Kenya and South Africa.
+
+**1. Get supported banks** for the target currency — [GET /api/v3/withdraw/v2/bank/supporting-banks/:currency](/v3/api-reference/withdrawals/supporting-banks). This gives you the bank codes to use in the request.
+
+**2. Initiate the withdrawal** — call [POST /api/v3/withdraw/v2/bank](/v3/api-reference/withdrawals/bank-v2) with your `callbackUrl` and the recipient's bank account details.
+
+**3. Kotani Pay notifies you** via your `callbackUrl` when the transfer completes or fails — same event structure as mobile money withdrawals.
+
+**4. Poll for status** if needed — [GET /api/v3/withdraw/v2/bank/status/:referenceId](/v3/api-reference/withdrawals/bank-status).
+
+---
+
+## Monitoring from the Dashboard
 
 1. Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com)
-2. Use the **country and currency selector in the top right** to select the relevant market
+2. Use the **country and currency selector** to filter by market
 3. Navigate to **Payouts** in the left sidebar
 
-<img
-  src="/images/dashboard/withdrawals-list.png"
-  alt="Withdrawals list in the dashboard with country/currency filter active"
-/>
-
-Each row shows the reference, amount, recipient, status, and timestamp. Click a row to see the provider reference, callback history, and whether the wallet was reversed on failure.
-
----
-
-## Mobile Money Withdrawal Flow
-
-### Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant MNO as Mobile Money Network
-    participant CronJob
-    participant Integrator
-
-    User->>Kotani Pay: POST /withdraw/mobile-money
-    Note right of User: Can provide referenceId<br/>or system generates one
-    Kotani Pay->>Kotani Pay: Validate API Key, Customer & Wallet
-    Kotani Pay->>Kotani Pay: Check Balance
-
-    alt Insufficient Balance
-        Kotani Pay-->>User: 400 Insufficient Funds
-    else Sufficient Balance
-        Kotani Pay->>Kotani Pay: Generate/Use Transaction ID
-        Kotani Pay->>Kotani Pay: Calculate Fees
-
-        Note over Kotani Pay: IMMEDIATE DEBIT
-        Kotani Pay->>Kotani Pay: Debit Wallet NOW
-        Kotani Pay->>Kotani Pay: Status: INITIATED
-        Kotani Pay->>Kotani Pay: Create Hash (duplicate check)
-
-        Kotani Pay->>MNO: Initiate Disbursement
-        MNO-->>Kotani Pay: Request ID
-        Kotani Pay->>Kotani Pay: Status: PENDING
-        Kotani Pay-->>User: Withdrawal Initiated
-
-        alt Provider Has Webhooks
-            MNO->>Kotani Pay: Status Callback
-        else Polling Required
-            Note over CronJob: Every 5 Minutes
-            CronJob->>Kotani Pay: Check Pending
-            Kotani Pay->>MNO: Query Status
-            MNO-->>Kotani Pay: Current Status
-        end
-
-        alt Withdrawal Successful
-            Kotani Pay->>Kotani Pay: Status: SUCCESSFUL
-            MNO->>User: Funds Received
-
-            Kotani Pay->>Integrator: Send Webhook
-            alt Webhook Success
-                Integrator-->>Kotani Pay: 200 OK
-            else Webhook Failed
-                Note over CronJob: Retry Every 2h
-            end
-
-        else Withdrawal Failed
-            Kotani Pay->>Kotani Pay: Status: FAILED
-
-            Note over Kotani Pay: AUTOMATIC REVERSAL
-            Kotani Pay->>Kotani Pay: Credit Back Balance
-
-            Kotani Pay->>Integrator: Send Failed Webhook
-
-        else Timeout (24h)
-            Kotani Pay->>Kotani Pay: Status: EXPIRED
-            Kotani Pay->>Kotani Pay: Credit Back Balance
-            Kotani Pay->>Integrator: Send Timeout Webhook
-        end
-    end
-
-    User->>Kotani Pay: GET /withdraw/status/:reference_id
-    Kotani Pay-->>User: Status & Details
-```
-
-### Details
-
-**Available Countries**: All supported countries
-
-**Networks**: M-PESA, MTN Money, Airtel Money, Orange Money, and more
-**Speed**: Instant to few minutes
-
-**Key Points**:
-- Funds debited IMMEDIATELY when withdrawal created
-- If withdrawal fails, funds automatically reversed
-- Hash-based duplicate prevention
-
----
-
-## Bank Transfer Withdrawal Flow
-
-Disburse funds to bank accounts.
-
-### Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant Bank as Bank Provider
-    participant CronJob
-    participant Integrator
-
-    User->>Kotani Pay: POST /withdraw/bank
-    Note right of User: Can provide referenceId<br/>or system generates one
-    Kotani Pay->>Kotani Pay: Validate API Key, Customer & Wallet
-    Kotani Pay->>Kotani Pay: Check Balance
-
-    alt Insufficient Balance
-        Kotani Pay-->>User: 400 Insufficient Funds
-    else Sufficient Balance
-        Kotani Pay->>Kotani Pay: Generate/Use Transaction ID
-        Kotani Pay->>Kotani Pay: Calculate Fees
-
-        Note over Kotani Pay: IMMEDIATE DEBIT
-        Kotani Pay->>Kotani Pay: Debit Wallet NOW
-        Kotani Pay->>Kotani Pay: Status: INITIATED
-
-        Kotani Pay->>Bank: Initiate Bank Transfer
-        Bank-->>Kotani Pay: Transfer ID
-        Kotani Pay->>Kotani Pay: Status: PENDING
-        Kotani Pay-->>User: Transfer Initiated
-
-        alt Provider Has Webhooks
-            Bank->>Kotani Pay: Status Callback
-        else Polling Required
-            Note over CronJob: Every 5 Minutes
-            CronJob->>Kotani Pay: Check Pending
-            Kotani Pay->>Bank: Query Status
-            Bank-->>Kotani Pay: Current Status
-        end
-
-        alt Transfer Successful
-            Kotani Pay->>Kotani Pay: Status: SUCCESSFUL
-            Bank->>User: Funds Received
-            Kotani Pay->>Integrator: Send Webhook
-
-        else Transfer Failed
-            Kotani Pay->>Kotani Pay: Status: FAILED
-            Kotani Pay->>Kotani Pay: Credit Back Balance
-            Kotani Pay->>Integrator: Send Failed Webhook
-
-        else Timeout (24h)
-            Kotani Pay->>Kotani Pay: Status: EXPIRED
-            Kotani Pay->>Kotani Pay: Credit Back Balance
-            Kotani Pay->>Integrator: Send Timeout Webhook
-        end
-    end
-
-    User->>Kotani Pay: GET /withdraw/status/:reference_id
-    Kotani Pay-->>User: Status & Details
-```
-
-### Details
-
-**Available Countries**: All supported countries
-
-**Processing**: 1-3 business days
-**Requirements**: Bank account number, bank code
-
-**Key Points**:
-- Funds debited immediately
-- Longer settlement time than mobile money
-- Automatic reversal on failure
-
----
-
-## Lipa na M-Pesa Withdrawal Flow
-
-Send payments to merchant till numbers (Kenya only).
-
-### Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant M-PESA as M-PESA Till
-    participant Integrator
-
-    User->>Kotani Pay: POST /withdraw/lipa-na-mpesa
-    Note right of User: Includes tillNumber
-    Kotani Pay->>Kotani Pay: Validate API Key & Wallet
-    Kotani Pay->>Kotani Pay: Validate KES Currency
-    Kotani Pay->>Kotani Pay: Check Balance
-
-    alt Insufficient Balance
-        Kotani Pay-->>User: 400 Insufficient Funds
-    else Sufficient Balance
-        Kotani Pay->>Kotani Pay: Generate/Use Transaction ID
-        Kotani Pay->>Kotani Pay: Calculate Fees
-
-        Note over Kotani Pay: IMMEDIATE DEBIT
-        Kotani Pay->>Kotani Pay: Debit Wallet NOW
-        Kotani Pay->>Kotani Pay: Status: INITIATED
-        Kotani Pay->>Kotani Pay: Create Hash
-
-        Kotani Pay->>M-PESA: Send to Till Number
-        M-PESA-->>Kotani Pay: Request ID
-        Kotani Pay->>Kotani Pay: Status: PENDING
-        Kotani Pay-->>User: Payment Sent
-
-        M-PESA->>Kotani Pay: Status Callback
-
-        alt Payment Successful
-            Kotani Pay->>Kotani Pay: Status: SUCCESSFUL
-            Kotani Pay->>Integrator: Send Webhook
-
-        else Payment Failed
-            Kotani Pay->>Kotani Pay: Status: FAILED
-            Kotani Pay->>Kotani Pay: Credit Back Balance
-            Kotani Pay->>Integrator: Send Failed Webhook
-
-        else Timeout (24h)
-            Kotani Pay->>Kotani Pay: Status: EXPIRED
-            Kotani Pay->>Kotani Pay: Credit Back Balance
-            Kotani Pay->>Integrator: Send Timeout Webhook
-        end
-    end
-
-    User->>Kotani Pay: GET /withdraw/status/:reference_id
-    Kotani Pay-->>User: Status & Details
-```
-
-### Details
-
-**Country**: Kenya only
-**Currency**: KES
-**Speed**: Instant
-
-**Key Points**:
-- No customer record needed
-- Funds debited immediately
-- Instant settlement
-
----
-
-## Paybill Withdrawal Flow
-
-Send payments to paybill numbers with account reference (Kenya only).
-
-### Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant M-PESA as M-PESA Paybill
-    participant Integrator
-
-    User->>Kotani Pay: POST /withdraw/paybill
-    Note right of User: Includes paybillNumber<br/>& accountNumber
-    Kotani Pay->>Kotani Pay: Validate API Key & Wallet
-    Kotani Pay->>Kotani Pay: Validate KES Currency
-    Kotani Pay->>Kotani Pay: Check Balance
-
-    alt Insufficient Balance
-        Kotani Pay-->>User: 400 Insufficient Funds
-    else Sufficient Balance
-        Kotani Pay->>Kotani Pay: Generate/Use Transaction ID
-        Kotani Pay->>Kotani Pay: Calculate Fees
-
-        Note over Kotani Pay: IMMEDIATE DEBIT
-        Kotani Pay->>Kotani Pay: Debit Wallet NOW
-        Kotani Pay->>Kotani Pay: Status: INITIATED
-        Kotani Pay->>Kotani Pay: Create Hash
-
-        Kotani Pay->>M-PESA: Send to Paybill
-        M-PESA-->>Kotani Pay: Request ID
-        Kotani Pay->>Kotani Pay: Status: PENDING
-        Kotani Pay-->>User: Payment Sent
-
-        M-PESA->>Kotani Pay: Status Callback
-
-        alt Payment Successful
-            Kotani Pay->>Kotani Pay: Status: SUCCESSFUL
-            Kotani Pay->>Integrator: Send Webhook
-
-        else Payment Failed
-            Kotani Pay->>Kotani Pay: Status: FAILED
-            Kotani Pay->>Kotani Pay: Credit Back Balance
-            Kotani Pay->>Integrator: Send Failed Webhook
-
-        else Timeout (24h)
-            Kotani Pay->>Kotani Pay: Status: EXPIRED
-            Kotani Pay->>Kotani Pay: Credit Back Balance
-            Kotani Pay->>Integrator: Send Timeout Webhook
-        end
-    end
-
-    User->>Kotani Pay: GET /withdraw/status/:reference_id
-    Kotani Pay-->>User: Status & Details
-```
-
-### Details
-
-**Country**: Kenya only
-**Currency**: KES
-**Speed**: Instant
-
-**Key Points**:
-- Requires paybill number and account reference
-- No customer record needed
-- Instant settlement
-
----
-
-## Transaction Statuses
-
-| Status | Description | Funds Status |
-|--------|-------------|--------------|
-| `INITIATED` | Transaction created, being processed | Debited |
-| `PENDING` | Submitted to provider | Debited |
-| `IN_PROGRESS` | Provider processing | Debited |
-| `SUCCESSFUL` | Funds disbursed successfully | Debited (final) |
-| `FAILED` | Disbursement failed | **Reversed** |
-| `EXPIRED` | No confirmation within 24h | **Reversed** |
-| `CANCELLED` | Transaction cancelled | **Reversed** |
-| `DECLINED` | Provider declined | **Reversed** |
-| `REVERSED` | Transaction reversed | **Reversed** |
-
----
-
-## Common Features
-
-### Immediate Wallet Debit
-- Funds debited IMMEDIATELY at creation
-- NOT reserved - actual debit happens instantly
-- If withdrawal fails, funds automatically reversed
-- No balance locking - clean debit/reverse flow
-
-### Transaction ID
-- Can be **integrator-provided** via `referenceId`
-- Or **system-generated** if not provided
-- Must be unique per integrator
-
-### Automatic Reversal
-When withdrawal fails or times out:
-1. Status updated to FAILED/EXPIRED/REVERSED
-2. Amount automatically credited back to wallet
-3. Transaction recorded for audit
-4. Webhook sent to notify integrator
-
-### Duplicate Prevention
-- Hash-based detection within same minute
-- Composite: timestamp + integrator + phone
-- Prevents accidental duplicates
-- Returns error if duplicate detected
-
-### Status Monitoring
-- Webhook callbacks for instant updates
-- Polling every 5 minutes for pending transactions
-- 24-hour timeout for unconfirmed transactions
-
----
-
-## Error Handling
-
-### Insufficient Balance
-```json
-{
-  "statusCode": 400,
-  "message": "Insufficient funds in fiat wallet"
-}
-```
-
-### Invalid Recipient
-```json
-{
-  "status": "FAILED",
-  "error": "Invalid mobile money number or bank account"
-}
-```
-
-### Provider Timeout
-```json
-{
-  "status": "EXPIRED",
-  "error": "Withdrawal not confirmed within 24 hours",
-  "note": "Funds reversed to wallet"
-}
-```
-
-### Duplicate Transaction
-```json
-{
-  "statusCode": 400,
-  "message": "Transaction Denied",
-  "note": "Duplicate detected within same minute"
-}
-```
-
-### Duplicate Reference
-```json
-{
-  "statusCode": 400,
-  "message": "Duplicate referenceId"
-}
-```
-
-### Wrong Currency (Lipa/Paybill)
-```json
-{
-  "statusCode": 400,
-  "message": "Lipa na M-Pesa/Paybill only available for Kenya (KES)"
-}
-```
-
----
-
-## Best Practices
-
-- **Validate Recipients**: Use `/customers/validate-mobile-money` before withdrawals
-- **Unique References**: Always provide unique `referenceId` values
-- **Implement Webhooks**: Set up webhook endpoint for real-time updates
-- **Handle Reversals**: Monitor for FAILED/EXPIRED statuses - funds auto-reversed
-- **Idempotency**: Safe to retry with same `referenceId` if request fails
-
----
-
-## Testing
-
-Use sandbox mode with test credentials provided in sandbox documentation.
+Each row shows the reference, recipient, amount, status, and timestamp. Failed transactions show the error reason.

@@ -1,300 +1,94 @@
 ---
 title: "Offramp Flow (Sell Crypto)"
-description: "This document shows the complete offramp flow for converting crypto to fiat and disbursing to users via different payment methods."
+description: "How to convert crypto to fiat — customer sends crypto, Kotani Pay disburses fiat via mobile money or bank"
 ---
 
-**Key Features**:
-- Rate locking (60 seconds validity)
-- Two flow modes: External wallet or Integrated wallet
-- Automatic refunds on fiat transfer failure
-- Multi-network crypto support (EVM, TRON, Lightning, Stellar)
+An offramp converts cryptocurrency into local fiat currency. The customer sends crypto to a Kotani Pay escrow address; once confirmed on-chain, Kotani Pay disburses the equivalent fiat to the customer's mobile money wallet or bank account.
 
 ---
 
-## 1. Transaction Initiation & Rate Locking
+## Before You Start
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-
-    User->>Kotani Pay: POST /offramp
-    Kotani Pay->>Kotani Pay: Validate API Key
-    Kotani Pay->>Kotani Pay: Validate Request
-    Kotani Pay->>Kotani Pay: Check Duplicate
-
-    alt Has Rate ID
-        Kotani Pay->>Kotani Pay: Validate Rate (60s expiry)
-        alt Rate Expired
-            Kotani Pay-->>User: 400 Rate Expired
-        end
-    end
-
-    Kotani Pay->>Kotani Pay: Lock Exchange Rate (Crypto→Fiat)
-    Kotani Pay->>Kotani Pay: Calculate Fiat Amount & Fees
-```
+- An API key — see [API Keys](/v3/getting-started/api-keys)
+- A customer record for the recipient — see [Create Customer](/v3/api-reference/customers/mobile-money/create)
+- A funded payout balance in the disbursement currency
+- A `callbackUrl` on your server
 
 ---
 
-## 2. Crypto Receipt
+## 1. Get a Rate Quote
 
-### External Wallet Flow
-
-User sends crypto from their own wallet.
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant Blockchain
-
-    Kotani Pay->>Kotani Pay: Generate Deposit Address
-    Kotani Pay->>Kotani Pay: Status: PENDING
-    Kotani Pay-->>User: Send Crypto to Address
-
-    User->>Blockchain: Transfer Crypto
-    Blockchain->>Kotani Pay: Transaction Detected
-
-    loop Monitor Confirmations (3+ blocks)
-        Kotani Pay->>Blockchain: Check Confirmation Count
-        alt Confirmed
-            Blockchain-->>Kotani Pay: Confirmed
-            Kotani Pay->>Kotani Pay: Status: CRYPTO_RECEIVED
-        else Failed/Timeout
-            Blockchain-->>Kotani Pay: Failed
-            Kotani Pay->>Kotani Pay: Status: FAILED
-        end
-    end
-```
-
-### Integrated Wallet Flow
-
-Platform wallet holds crypto, instant processing.
-
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant Blockchain
-
-    Kotani Pay->>Kotani Pay: Verify Wallet Ownership
-    Kotani Pay->>Blockchain: Deduct Crypto from Wallet
-    Kotani Pay->>Kotani Pay: Status: CRYPTO_RECEIVED
-    Note over Kotani Pay: Crypto already in platform custody
-```
+Fetch the current offramp rate to show the customer how much fiat they'll receive. Call [GET /api/v3/rates/offramp-rate](/v3/api-reference/rates/offramp-rate) with the crypto token and target fiat currency.
 
 ---
 
-## 3. Fiat Disbursement
+## 2. Create the Offramp
 
-### Mobile Money Disbursement
-
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant MNO as Mobile Money Network
-    participant User
-
-    Kotani Pay->>Kotani Pay: Validate Phone & Network
-    Kotani Pay->>MNO: Initiate Disbursement
-
-    alt Disbursement Success
-        MNO-->>Kotani Pay: Payment Sent
-        MNO->>User: Funds Received
-        Kotani Pay->>Kotani Pay: Status: SUCCESS
-    else Disbursement Failed
-        MNO-->>Kotani Pay: Payment Failed
-        Kotani Pay->>Kotani Pay: Status: REFUND_PENDING
-    end
-```
-
-**Available Countries**: All supported countries
-**Networks**: M-PESA, Airtel Money, MTN Mobile Money, Orange Money
-
-### Bank Transfer Disbursement
-
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant Bank as Bank Provider
-    participant User
-
-    Kotani Pay->>Kotani Pay: Validate Bank Details
-    Kotani Pay->>Kotani Pay: Verify Account Number
-    Kotani Pay->>Bank: Initiate Bank Transfer
-
-    alt Transfer Success
-        Bank-->>Kotani Pay: Transfer Complete
-        Bank->>User: Funds Received
-        Kotani Pay->>Kotani Pay: Status: SUCCESS
-    else Transfer Failed
-        Bank-->>Kotani Pay: Transfer Failed
-        Kotani Pay->>Kotani Pay: Status: REFUND_PENDING
-    end
-```
-
-**Available Countries**: All supported countries
-**Processing Time**: Instant to 24 hours
+Call [POST /api/v3/offramp](/v3/api-reference/offramp/create) with your `callbackUrl`. The API responds with a `PENDING` transaction and a `depositAddress` — this is the on-chain address the customer must send crypto to. Display this address (and optionally a QR code) to them.
 
 ---
 
-## 4. Automatic Refund (On Fiat Failure)
+## 3. Customer Sends Crypto
 
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant Blockchain
-    participant User
-
-    Note over Kotani Pay: Fiat transfer failed
-    Kotani Pay->>Kotani Pay: Queue Refund Job (5 min delay)
-    Kotani Pay->>Kotani Pay: Status: REFUND_PENDING
-
-    loop Refund Process (Max 3 retries)
-        Kotani Pay->>Blockchain: Return Crypto to Sender
-        alt Refund Success
-            Blockchain->>User: Crypto Returned
-            Blockchain-->>Kotani Pay: Crypto Refunded
-            Kotani Pay->>Kotani Pay: Status: REFUNDED
-        else Refund Failed
-            Kotani Pay->>Kotani Pay: Retry Count++
-            alt Max Retries Reached
-                Kotani Pay->>Kotani Pay: Status: REFUND_FAILED
-                Note over Kotani Pay: Manual intervention required
-            end
-        end
-    end
-```
+The customer sends the exact amount to the `depositAddress` from their own wallet. Kotani Pay monitors the address and advances the transaction to `CRYPTO_RECEIVED` once the required confirmations are reached. No further action is needed from your server at this step.
 
 ---
 
-## 5. Webhook Notification
+## 4. Fiat is Disbursed
 
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant CronJob
-    participant Integrator
+Once crypto is confirmed, Kotani Pay initiates the fiat disbursement. The recipient gets an SMS confirmation from the mobile money network when funds arrive.
 
-    Kotani Pay->>CronJob: Queue Callback Job
-    CronJob->>Integrator: POST Webhook (Signed)
-
-    alt Webhook Success
-        Integrator-->>CronJob: 200 OK
-        CronJob->>Kotani Pay: CALLBACK_SENT
-    else Webhook Failed
-        CronJob->>CronJob: Retry 3x with Backoff
-        alt Retries Exhausted
-            CronJob->>CronJob: Cron Retry (Every 2h, Max 24h)
-        end
-    end
-```
+<Warning>
+If fiat disbursement fails after crypto is received, Kotani Pay automatically initiates a crypto refund 5 minutes after the failure. The transaction moves to `REFUND_PENDING`. Track this via the refund endpoints below.
+</Warning>
 
 ---
 
-## Transaction Statuses
+## 5. Kotani Pay Notifies You
 
-| Status | Description |
-|--------|-------------|
-| `PENDING` | Awaiting crypto payment |
-| `CRYPTO_RECEIVED` | Crypto confirmed, preparing fiat transfer |
-| `PROCESSING` | Fiat disbursement in progress |
-| `SUCCESS` | Fiat delivered successfully |
-| `FAILED` | Transaction failed |
-| `REFUND_PENDING` | Refund queued (fiat failed, returning crypto) |
-| `REFUNDED` | Crypto returned to sender |
-| `REFUND_FAILED` | Refund attempts exhausted, manual intervention needed |
-| `TIMEOUT` | Crypto not received within timeout period |
+Kotani Pay POSTs to your `callbackUrl` at each terminal state:
 
----
+- `SUCCESS` — fiat delivered to the recipient
+- `FAILED` — disbursement failed
+- `REFUNDED` — crypto returned to sender after a failed fiat disbursement
+- `REFUND_FAILED` — crypto refund failed; contact support
 
-## Crypto Networks Supported
-
-### EVM Chains
-- **Networks**: Ethereum, Polygon, Arbitrum, Base, Optimism, Celo
-- **Tokens**: USDT, USDC, DAI
-- **Confirmations**: 3 blocks required
-
-### TRON
-- **Tokens**: USDT (TRC20)
-- **Confirmations**: Verified via TronGrid
-
-### Lightning Network
-- **Use Case**: Fast Bitcoin offramps
-- **Payment**: Lightning invoice
-
-### Stellar
-- **Tokens**: USDC, other Stellar assets
-- **Confirmations**: Near-instant
+<Note>
+If you have a webhook secret configured, the callback arrives in a signed envelope with `X-Kotani-Signature`, `X-Kotani-Event`, and `X-Kotani-Integrator` headers. Without a secret, the transaction fields are posted directly to your `callbackUrl`. See [Webhooks](/v3/essentials/webhooks).
+</Note>
 
 ---
 
-## Key Features
+## 6. Poll for Status
 
-### Rate Locking
-- Exchange rate locked at transaction creation
-- Valid for 60 seconds
-- Must request new rate if expired
-
-### Automatic Refunds
-- Triggered 5 minutes after fiat transfer failure
-- Up to 3 retry attempts
-- Returns crypto to original sender address
-- Track via `/offramp/refund-status/:referenceId`
-
-### Flexible Wallet Options
-- **External Wallet**: User controls private keys
-- **Integrated Wallet**: Platform-managed for instant processing
+- [GET /api/v3/offramp/:referenceId](/v3/api-reference/offramp/get-status) — full transaction status
+- [GET /api/v3/offramp/refund-status/:referenceId](/v3/api-reference/offramp/refund-status) — refund status if fiat disbursement failed
 
 ---
 
-## Error Handling
+## Refund Handling
 
-### Rate Expired
-```json
-{
-  "statusCode": 400,
-  "message": "Rate expired. Rates are valid for 60 seconds."
-}
-```
+If the automatic refund fails, you can retry:
 
-### Insufficient Crypto Amount
-```json
-{
-  "statusCode": 400,
-  "message": "Insufficient crypto amount"
-}
-```
+- **Single retry** — [POST /api/v3/offramp/retry-refund/:referenceId](/v3/api-reference/offramp/retry-refund)
+- **Lightning offramps** — if the refund requires a bolt11 invoice, the customer provides one and you submit it via `POST /api/v3/offramp/submit-refund-invoice/:referenceId`
 
-### Fiat Transfer Failed (Auto-Refund)
-```json
-{
-  "status": "REFUND_PENDING",
-  "message": "Fiat transfer failed. Crypto refund will be processed in 5 minutes.",
-  "refund": {
-    "cryptoAmount": 10.5,
-    "currency": "USDT",
-    "network": "Polygon"
-  }
-}
-```
+See [Offramp Refunds](/v3/essentials/offramp-refunds) for the full refund states and handling.
 
 ---
 
-## Best Practices
+## Cancel a Transaction
 
-- **Pre-Check Rates**: Use `/rates/offramp-rate` before creating transaction
-- **Validate Addresses**: Ensure sender address format matches network
-- **Handle Callbacks**: Implement webhook endpoint with HMAC verification
-- **Monitor Refunds**: Check refund status via `/offramp/refund-status/:referenceId`
-- **Bank Transfers**: Verify bank account details before submission
+A transaction can only be cancelled while still in `PENDING` — before any crypto is received on-chain.
+
+[GET /api/v3/offramp/cancel/:referenceId](/v3/api-reference/offramp/cancel)
 
 ---
 
-## Testing
+## Monitoring from the Dashboard
 
-Use sandbox mode with test credentials provided in sandbox documentation.
+1. Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com)
+2. Use the **country and currency selector** to filter by market
+3. Navigate to **Offramp** in the left sidebar
 
-**Test Scenarios**:
-- Crypto amounts ending in `.00` trigger success
-- Crypto amounts ending in `.99` trigger fiat failure + refund
-- Crypto amounts ending in `.88` trigger timeout
+Failed transactions show the reason and refund status.

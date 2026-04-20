@@ -114,3 +114,30 @@ See [Webhooks](/v3/essentials/webhooks) for both delivery modes, all event types
 <Warning>
   Sandbox credentials do not work against the production URL. Always generate environment-specific keys.
 </Warning>
+
+---
+
+## Transaction Flows
+
+Each flow walks through the full lifecycle — what to call, what the customer experiences, how the callback arrives, and how to poll for status.
+
+<CardGroup cols={2}>
+  <Card title="Deposit Flow" icon="arrow-down" href="/v3/flows/deposit-flow">
+    Mobile money, bank checkout, and card collections
+  </Card>
+  <Card title="Withdrawal Flow" icon="arrow-up" href="/v3/flows/withdrawal-flow">
+    Mobile money and bank disbursements
+  </Card>
+  <Card title="Onramp Flow" icon="coins" href="/v3/flows/onramp-flow">
+    Fiat → crypto via mobile money or bank
+  </Card>
+  <Card title="Offramp Flow" icon="arrow-right-arrow-left" href="/v3/flows/offramp-flow">
+    Crypto → fiat disbursement and refund handling
+  </Card>
+  <Card title="Payment Links" icon="link" href="/v3/flows/payment-links-flow">
+    Hosted checkout pages with multiple payment methods
+  </Card>
+  <Card title="Bulk Payments" icon="list" href="/v3/flows/bulk-payments-flow">
+    CSV-based mass disbursements with batch tracking
+  </Card>
+</CardGroup>

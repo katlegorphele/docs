@@ -1,289 +1,78 @@
 ---
-title: "Onramp Flow (Fiat → Crypto)"
-description: "This document shows the complete onramp flow for converting fiat to crypto, including payment collection and crypto delivery."
+title: "Onramp Flow (Buy Crypto)"
+description: "How to convert fiat to crypto — customer pays via mobile money or bank, Kotani Pay sends crypto to their wallet"
 ---
 
-**Available Countries**: South Africa, Ivory Coast, Benin, Congo B, Gabon, Burkina Faso, Malawi, Mozambique, Senegal, Sierra Leone, Zambia
-
----
-
-## 1. Transaction Initiation
-
-Creating an onramp transaction with rate locking.
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant Integrator
-
-    User->>Kotani Pay: POST /onramp/crypto
-    Kotani Pay->>Kotani Pay: Validate API Key
-    Kotani Pay->>Kotani Pay: Generate Transaction ID
-    Kotani Pay->>Kotani Pay: Lock Exchange Rate (Fiat→Crypto)
-    Kotani Pay->>Kotani Pay: Calculate Crypto Amount & Fees
-
-    alt Has Crypto Wallet
-        Kotani Pay->>Kotani Pay: Validate Wallet Address
-        Note over Kotani Pay: Mode: CRYPTO_DELIVERY
-    else No Crypto Wallet
-        Note over Kotani Pay: Mode: FIAT_WALLET_CREDIT
-    end
-
-    Kotani Pay-->>User: Transaction ID & Payment Instructions
-```
+An onramp converts local fiat currency into cryptocurrency. The customer pays via mobile money or bank checkout; once payment confirms, Kotani Pay sends the crypto to the wallet address you provided.
 
 ---
 
-## 2. Fiat Payment Collection
+## Before You Start
 
-### Mobile Money Payment
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant MNO as Mobile Money Network
-
-    Kotani Pay->>MNO: Initiate Collection Request
-    MNO-->>User: STK Push / USSD Prompt
-    MNO->>MNO: Status: PENDING
-
-    User->>MNO: Enter PIN / Confirm Payment
-    MNO->>Kotani Pay: Payment Callback (Success/Failed)
-    Kotani Pay->>Kotani Pay: Status: CRYPTO_PENDING
-```
-
-**Available Countries**: All supported countries
-**Networks**: M-PESA, MTN Money, Airtel Money, Orange Money
-
-### Bank Checkout Payment
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant Bank as Bank Provider
-
-    Kotani Pay->>Bank: Create Checkout Session
-    Bank-->>Kotani Pay: Checkout URL
-    Kotani Pay-->>User: Redirect to Bank Portal
-
-    User->>Bank: Complete Bank Payment
-    Bank->>Kotani Pay: Payment Webhook
-    Kotani Pay->>Kotani Pay: Status: CRYPTO_PENDING
-```
-
-### Fiat Wallet Deduction
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-
-    Kotani Pay->>Kotani Pay: Check Fiat Balance
-    alt Insufficient Balance
-        Kotani Pay-->>User: 400 Insufficient Funds
-    else Sufficient Balance
-        Kotani Pay->>Kotani Pay: Reserve Fiat Amount
-        Kotani Pay->>Kotani Pay: Status: CRYPTO_PENDING
-    end
-```
+- An API key — see [API Keys](/v3/getting-started/api-keys)
+- A customer record for the person paying — see [Create Customer](/v3/api-reference/customers/mobile-money/create)
+- A crypto wallet address to receive the funds
+- A `callbackUrl` on your server
 
 ---
 
-## 3. Crypto Delivery
+## 1. Get a Rate Quote
 
-### Lightning Network Delivery
-
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant Lightning as Lightning Network
-
-    Kotani Pay->>Kotani Pay: Validate Lightning Invoice
-    Kotani Pay->>Lightning: Pay Lightning Invoice
-    Lightning-->>Kotani Pay: Payment Preimage
-
-    alt Payment Success
-        Kotani Pay->>Kotani Pay: Status: SUCCESS
-        Kotani Pay->>Kotani Pay: Deduct Fiat
-    else Payment Failed
-        Kotani Pay->>Kotani Pay: Status: FAILED
-        Kotani Pay->>Kotani Pay: Refund to Fiat Wallet
-    end
-```
-
-### EVM Chain Delivery
-
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant Blockchain as EVM Chain
-
-    Kotani Pay->>Kotani Pay: Validate EVM Address
-    Kotani Pay->>Blockchain: Initiate Token Transfer
-    Blockchain-->>Kotani Pay: Transaction Hash
-    Kotani Pay->>Kotani Pay: Status: PROCESSING
-
-    loop Monitor Confirmations (3+ blocks)
-        Kotani Pay->>Blockchain: Check Status
-        alt Confirmed
-            Blockchain-->>Kotani Pay: Confirmed
-            Kotani Pay->>Kotani Pay: Status: SUCCESS
-            Kotani Pay->>Kotani Pay: Deduct Fiat
-        else Failed
-            Kotani Pay->>Kotani Pay: Retry (Max 3)
-            alt Max Retries
-                Kotani Pay->>Kotani Pay: Status: FAILED
-                Kotani Pay->>Kotani Pay: Refund to Fiat Wallet
-            end
-        end
-    end
-```
-
-**Supported Networks**: Ethereum, Polygon, Arbitrum, Base, Optimism
-**Tokens**: USDT, USDC, DAI
-
-### TRON Network Delivery
-
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant TRON as TRON Network
-
-    Kotani Pay->>Kotani Pay: Validate TRON Address
-    Kotani Pay->>TRON: Initiate TRC20 Transfer
-    TRON-->>Kotani Pay: Transaction Hash
-    Kotani Pay->>Kotani Pay: Status: PROCESSING
-
-    loop Monitor TronGrid
-        Kotani Pay->>TRON: Check Confirmation
-        alt Confirmed
-            Kotani Pay->>Kotani Pay: Status: SUCCESS
-            Kotani Pay->>Kotani Pay: Deduct Fiat
-        else Failed
-            Kotani Pay->>Kotani Pay: Status: FAILED
-            Kotani Pay->>Kotani Pay: Refund to Fiat Wallet
-        end
-    end
-```
-
-**Tokens**: USDT (TRC20)
-
-### Fiat Wallet Credit (No Crypto Wallet)
-
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-
-    Note over Kotani Pay: No crypto wallet provided
-    Kotani Pay->>Kotani Pay: Credit Fiat Wallet
-    Kotani Pay->>Kotani Pay: Status: SUCCESS
-    Note over Kotani Pay: Credited at crypto rate
-```
+Fetch the current exchange rate before initiating so you can show the customer what crypto amount they'll receive. Call [GET /api/v3/rates/onramp-rate](/v3/api-reference/rates/onramp-rate) with the fiat currency and crypto token.
 
 ---
 
-## 4. Webhook Notification
+## 2. Initiate the Onramp
 
-```mermaid
-sequenceDiagram
-    participant Kotani Pay
-    participant CronJob
-    participant Integrator
-
-    Kotani Pay->>CronJob: Queue Callback Job
-    CronJob->>Integrator: POST Webhook (Signed)
-
-    alt Webhook Success
-        Integrator-->>CronJob: 200 OK
-        CronJob->>Kotani Pay: CALLBACK_SENT
-    else Webhook Failed
-        CronJob->>CronJob: Retry 3x with Backoff
-        alt Retries Exhausted
-            CronJob->>CronJob: Cron Retry (Every 2h, Max 24h)
-        end
-    end
-```
+Call [POST /api/v3/onramp](/v3/api-reference/onramp/create) with your `callbackUrl` and the destination crypto wallet address. The API responds immediately with a `PENDING` transaction. The exchange rate is locked at this point.
 
 ---
 
-## Transaction Statuses
+## 3. Customer Pays
 
-| Status | Description |
-|--------|-------------|
-| `PENDING` | Awaiting fiat payment |
-| `PENDING_PROVIDER` | Payment initiated with provider |
-| `CRYPTO_PENDING` | Fiat confirmed, crypto transfer in progress |
-| `PROCESSING` | Blockchain transaction submitted |
-| `SUCCESS` | Crypto delivered successfully |
-| `FAILED` | Transaction failed (fiat refunded to wallet) |
-| `TIMEOUT` | Payment not confirmed within 24 hours |
+- **Mobile money** — the customer receives an STK push (M-PESA, Airtel) or USSD prompt (MTN, others) and confirms by entering their PIN
+- **Bank checkout** — the response includes a `checkoutUrl`; redirect the customer there to complete payment on the bank's page
+
+The customer has not paid yet when you receive the initial response — they must complete their confirmation step.
 
 ---
 
-## Key Features
+## 4. Crypto is Delivered
 
-### Rate Locking
-- Exchange rate locked at transaction creation
-- Valid for 30 minutes
-- Auto-refreshed upon payment confirmation
+Once fiat payment confirms, Kotani Pay converts at the locked rate and sends crypto to the wallet:
 
-### Flexible Delivery
-- **Has Crypto Wallet**: Crypto delivered to user's address
-- **No Crypto Wallet**: Fiat credited at crypto rate
+- `CRYPTO_PENDING` — fiat confirmed, crypto transfer in progress
+- `PROCESSING` — blockchain transaction submitted, awaiting on-chain confirmations
+- `SUCCESS` — crypto delivered
 
-### Safety Mechanisms
-- Failed crypto transfers automatically refund to fiat wallet
-- Up to 3 retry attempts for blockchain transactions
-- Balance never lost
+<Warning>
+If the crypto transfer fails after fiat is collected, the fiat amount is automatically refunded to your fiat wallet.
+</Warning>
 
 ---
 
-## Error Handling
+## 5. Kotani Pay Notifies You
 
-### Insufficient Fiat Wallet Balance
-```json
-{
-  "statusCode": 400,
-  "message": "Insufficient balance in fiat wallet"
-}
-```
+Kotani Pay POSTs to your `callbackUrl` when the transaction reaches a terminal state:
 
-### Invalid Crypto Address
-```json
-{
-  "statusCode": 400,
-  "message": "Invalid crypto address"
-}
-```
+- `SUCCESS` — crypto delivered to the wallet
+- `FAILED` — transaction failed; fiat refunded automatically
 
-### Crypto Transfer Failed (Auto-Refund)
-```json
-{
-  "status": "FAILED",
-  "message": "Crypto transfer failed after 3 attempts",
-  "refund": {
-    "amount": 10000,
-    "currency": "KES",
-    "destination": "Fiat Wallet",
-    "status": "REFUNDED"
-  }
-}
-```
+<Note>
+If you have a webhook secret configured, the callback arrives in a signed envelope with `X-Kotani-Signature`, `X-Kotani-Event`, and `X-Kotani-Integrator` headers. Without a secret, the transaction fields are posted directly to your `callbackUrl`. See [Webhooks](/v3/essentials/webhooks).
+</Note>
 
 ---
 
-## Best Practices
+## 6. Poll for Status
 
-- **Pre-Check Rates**: Use `/rates/onramp-rate` before creating transaction
-- **Validate Addresses**: Verify address format matches network
-- **Handle Callbacks**: Implement webhook endpoint with HMAC verification
-- **Monitor Status**: Poll status endpoint and display transaction hash to users
+- [GET /api/v3/onramp/:referenceId](/v3/api-reference/onramp/get-status) — standard onramp status
+- [GET /api/v3/onramp/crypto/:referenceId](/v3/api-reference/onramp/get-crypto-status) — crypto delivery status
 
 ---
 
-## Testing
+## Monitoring from the Dashboard
 
-Use sandbox mode with test credentials provided in sandbox documentation.
+1. Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com)
+2. Use the **country and currency selector** to filter by market
+3. Navigate to **Onramp** in the left sidebar

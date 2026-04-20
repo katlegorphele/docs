@@ -1,586 +1,76 @@
 ---
 title: "Bulk Payments Flow"
-description: "Bulk payments allow integrators to disburse funds to multiple recipients simultaneously via CSV upload. Process hundreds or thousands of payments in one transaction with automatic validation, processing, and tracking."
+description: "How to disburse funds to many recipients at once — validate a CSV, assign wallets, and track batch processing"
 ---
 
-## Overview
-
-Bulk payments support mass disbursements via:
-- Mobile money payments
-- Bank transfers
-
-**Key Features**:
-- CSV-based bulk upload
-- Multi-currency support (one batch per currency)
-- Automatic validation and duplicate detection
-- Wallet balance verification
-- Progress tracking with detailed status
-- Automatic retry on failures
-- Webhook notifications per batch
-- Transaction grouping and reporting
-
-**Processing Flow**:
-1. Upload CSV with recipient details
-2. Validate CSV format and data
-3. Select wallet for each currency
-4. Create batches (one per currency)
-5. Process payments asynchronously
-6. Track progress and receive webhooks
+Bulk payments let you disburse to hundreds or thousands of recipients in a single operation. Upload a CSV of recipients, assign a payout wallet per currency, and Kotani Pay processes the payments asynchronously — one batch per currency.
 
 ---
 
-## CSV Upload and Validation Flow
+## Before You Start
 
-Upload and validate recipient data via CSV file.
-
-### Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant Integrator
-    participant Kotani Pay
-
-    Note over Integrator,Kotani Pay: CSV Upload & Validation
-
-    Integrator->>Kotani Pay: POST /bulk-payments/validate
-    Kotani Pay->>Kotani Pay: Validate API Key
-    Kotani Pay->>Kotani Pay: Calculate File Hash
-    Kotani Pay->>Kotani Pay: Check Duplicate Upload
-
-    alt File Already Uploaded
-        Kotani Pay-->>Integrator: File Previously Uploaded
-    end
-
-    Kotani Pay->>Kotani Pay: Parse CSV
-
-    alt CSV Parse Error
-        Kotani Pay-->>Integrator: CSV Format Error
-    end
-
-    Kotani Pay->>Kotani Pay: Validate Headers
-
-    alt Invalid Headers
-        Kotani Pay-->>Integrator: Required Columns Missing
-    end
-
-    loop For Each Row
-        Kotani Pay->>Kotani Pay: Validate Recipient Data
-        Kotani Pay->>Kotani Pay: Validate Phone, Email, Amount
-        Kotani Pay->>Kotani Pay: Validate Currency & Reference
-
-        alt Validation Error
-            Kotani Pay->>Kotani Pay: Collect Error (Row Number)
-        end
-    end
-
-    Kotani Pay->>Kotani Pay: Check Duplicate References
-    Kotani Pay->>Kotani Pay: Group by Currency
-    Kotani Pay->>Kotani Pay: Calculate Totals per Currency
-
-    Kotani Pay-->>Integrator: CSV Validation Response
-
-    alt Validation Success
-        Integrator->>Integrator: Review Summary
-        Integrator->>Integrator: Select Wallets per Currency
-    else Validation Errors
-        Integrator->>Integrator: Fix CSV Errors
-        Integrator->>Kotani Pay: Re-upload Corrected CSV
-    end
-```
-
-### CSV Format
-
-**Required Columns**:
-- `recipient_name`: Full name of recipient
-- `recipient_email`: Email address
-- `recipient_phone`: Phone number with country code
-- `amount`: Payment amount (numeric)
-- `currency`: Currency code (KES, UGX, TZS, etc.)
-- `reference`: Unique reference per payment
-
-**Optional Columns**:
-- `description`: Payment description/note
-- `metadata`: Additional data (JSON string)
-
-**Example CSV**:
-```csv
-recipient_name,recipient_email,recipient_phone,amount,currency,reference,description
-John Doe,john@example.com,+254700000000,1000,KES,INV-001,January Salary
-Jane Smith,jane@example.com,+256700000000,500000,UGX,INV-002,Commission Payment
-Bob Johnson,bob@example.com,+254711000000,2500,KES,INV-003,Refund
-```
-
-### Validation Response
-
-```json
-{
-  "isValid": true,
-  "totalRecords": 150,
-  "currencies": ["KES", "UGX", "TZS"],
-  "currencyBreakdown": {
-    "KES": {
-      "count": 100,
-      "totalAmount": 150000
-    },
-    "UGX": {
-      "count": 30,
-      "totalAmount": 15000000
-    },
-    "TZS": {
-      "count": 20,
-      "totalAmount": 500000
-    }
-  },
-  "fileHash": "md5_hash_here",
-  "isDuplicate": false,
-  "errors": [],
-  "warnings": [
-    "Row 45: Phone format may be invalid"
-  ]
-}
-```
-
-**Key Points**:
-- File hash prevents duplicate uploads
-- Each row validated individually
-- Errors include row numbers for easy correction
-- Currency automatically detected and grouped
-- Totals calculated per currency (never mixed)
-- Duplicate references within CSV detected
+- An API key — see [API Keys](/v3/getting-started/api-keys)
+- Funded payout wallets for each currency in your CSV
+- A `callbackUrl` — each individual payment fires a `transaction.withdrawal.status.updated` webhook as it settles
 
 ---
 
-## Batch Creation and Processing Flow
+## 1. Validate Your CSV
 
-Create payment batches and process disbursements.
+Call [POST /api/v3/bulk-payments/validate-csv](/v3/api-reference/bulk-payments/validate-csv) with your CSV file. Kotani Pay validates every row and returns:
 
-### Flow Diagram
+- A summary grouped by currency with totals
+- Row-level errors with line numbers if any data is invalid
 
-```mermaid
-sequenceDiagram
-    participant Integrator
-    participant Kotani Pay
-    participant Queue
-    participant MNO as Payment Provider
-    participant Recipient
-
-    Note over Integrator,Recipient: Batch Creation
-
-    Integrator->>Kotani Pay: POST /bulk-payments/create
-    Kotani Pay->>Kotani Pay: Group Recipients by Currency
-
-    loop For Each Currency
-        Kotani Pay->>Kotani Pay: Validate Wallet Selection
-        Kotani Pay->>Kotani Pay: Check Wallet Currency Match
-        Kotani Pay->>Kotani Pay: Check Sufficient Balance
-
-        alt Insufficient Balance
-            Kotani Pay-->>Integrator: Top Up Wallet for {Currency}
-        end
-    end
-
-    Kotani Pay->>Kotani Pay: Create Transaction Record
-    Kotani Pay->>Kotani Pay: Create Batch Records
-    Kotani Pay->>Kotani Pay: Create Payment Records
-    Kotani Pay->>Queue: Queue Batch Processing
-
-    Kotani Pay-->>Integrator: Transaction & Batch IDs
-
-    Note over Queue,Recipient: Asynchronous Processing
-
-    Queue->>Kotani Pay: Process Batch
-    Kotani Pay->>Kotani Pay: Get Pending Payments
-
-    loop For Each Payment in Batch
-        Kotani Pay->>Kotani Pay: Status: PROCESSING
-        Kotani Pay->>Kotani Pay: Validate Phone & Amount
-        Kotani Pay->>Kotani Pay: Debit Wallet (Immediate)
-
-        Kotani Pay->>MNO: Initiate Disbursement
-
-        alt Payment Success
-            MNO-->>Kotani Pay: Payment Sent
-            Kotani Pay->>Kotani Pay: Status: SUCCESS
-            Kotani Pay->>Kotani Pay: Increment Success Count
-            MNO->>Recipient: SMS: Payment Received
-
-        else Payment Failed
-            MNO-->>Kotani Pay: Payment Failed
-            Kotani Pay->>Kotani Pay: Reverse Wallet Debit
-            Kotani Pay->>Kotani Pay: Status: FAILED
-            Kotani Pay->>Kotani Pay: Increment Fail Count
-
-            alt Auto-Retry Enabled
-                Queue->>Queue: Schedule Retry (Max 3x)
-            end
-        end
-    end
-
-    Note over Kotani Pay,Integrator: Batch Completion
-
-    Kotani Pay->>Kotani Pay: Update Batch Status
-    Kotani Pay->>Kotani Pay: Calculate Statistics
-
-    alt All Payments Processed
-        Kotani Pay->>Kotani Pay: Batch Status: COMPLETED
-    else Some Failures
-        Kotani Pay->>Kotani Pay: Batch Status: COMPLETED_WITH_ERRORS
-    else All Failed
-        Kotani Pay->>Kotani Pay: Batch Status: FAILED
-    end
-
-    Kotani Pay->>Integrator: POST Webhook (Batch Results)
-
-    alt Webhook Success
-        Integrator-->>Kotani Pay: 200 OK
-    else Webhook Failed
-        Queue->>Queue: Retry 3x with Backoff
-    end
-
-    Note over Integrator: Monitor Progress
-
-    loop Poll Status
-        Integrator->>Kotani Pay: GET /bulk-payments/batches/:batchId
-        Kotani Pay-->>Integrator: Progress & Stats
-    end
-```
-
-### Details
-
-**Batch Processing**:
-- One batch created per currency
-- Batches linked to parent transaction
-- Each batch processes independently
-- Asynchronous processing via queue
-- Progress tracked at batch and payment level
-
-**Wallet Debit**:
-- Immediate debit when payment initiated
-- Automatic reversal on failure
-- Balance verification before batch creation
-- Separate wallet required per currency
-
-**Payment Statuses**:
-- `PENDING`: Awaiting processing
-- `PROCESSING`: Payment being sent
-- `SUCCESS`: Payment delivered
-- `FAILED`: Payment failed (wallet reversed)
-- `RETRY`: Queued for retry
-
-**Batch Statuses**:
-- `pending`: Batch created, awaiting processing
-- `processing`: Payments being sent
-- `completed`: All payments processed successfully
-- `completed_with_errors`: Some payments failed
-- `failed`: All payments failed
-- `cancelled`: Batch cancelled by user
-
-**Key Points**:
-- Payments processed sequentially within batch
-- Failed payments automatically reversed
-- Up to 3 automatic retries per payment
-- Detailed progress tracking per payment
-- Webhooks sent per batch completion
-- Transaction groups multiple batches
+Fix any errors and re-upload. A file hash is computed to prevent duplicate submissions.
 
 ---
 
-## Progress Tracking Flow
+## 2. Preview Batches
 
-Monitor batch processing progress in real-time.
-
-### Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant Integrator
-    participant Kotani Pay
-
-    Note over Integrator,Kotani Pay: Real-time Progress Monitoring
-
-    Integrator->>Kotani Pay: GET /bulk-payments/transactions/:txnId
-    Kotani Pay-->>Integrator: Transaction Overview
-
-    Integrator->>Kotani Pay: GET /bulk-payments/batches/:batchId
-    Kotani Pay-->>Integrator: Batch Progress
-
-    loop Poll Every 5s
-        Integrator->>Kotani Pay: GET /bulk-payments/batches/:batchId/stats
-        Kotani Pay-->>Integrator: Progress Update
-
-        alt Batch Completed
-            Integrator->>Integrator: Stop Polling
-            Integrator->>Kotani Pay: GET /bulk-payments/batches/:batchId/export
-            Kotani Pay-->>Integrator: CSV Export
-        end
-    end
-```
-
-### Progress Response
-
-```json
-{
-  "transactionId": "txn_abc123",
-  "transactionName": "January Payroll",
-  "status": "processing",
-  "totalBatches": 3,
-  "completedBatches": 2,
-  "failedBatches": 0,
-  "batches": [
-    {
-      "batchId": "batch_001",
-      "currency": "KES",
-      "status": "completed",
-      "totalPayments": 100,
-      "successfulPayments": 98,
-      "failedPayments": 2,
-      "pendingPayments": 0,
-      "totalAmount": 150000,
-      "progress": [
-        {
-          "step": "validation",
-          "status": "completed",
-          "message": "CSV validation completed",
-          "completedAt": "2024-01-15T10:00:00Z"
-        },
-        {
-          "step": "creation",
-          "status": "completed",
-          "message": "Batch created with 100 payments",
-          "completedAt": "2024-01-15T10:01:00Z"
-        },
-        {
-          "step": "payment_processing",
-          "status": "completed",
-          "message": "98 successful, 2 failed",
-          "completedAt": "2024-01-15T10:15:00Z"
-        }
-      ]
-    },
-    {
-      "batchId": "batch_002",
-      "currency": "UGX",
-      "status": "processing",
-      "totalPayments": 30,
-      "successfulPayments": 15,
-      "failedPayments": 0,
-      "pendingPayments": 15,
-      "totalAmount": 15000000,
-      "progress": [
-        {
-          "step": "payment_processing",
-          "status": "running",
-          "message": "Processing payment 16 of 30",
-          "startedAt": "2024-01-15T10:10:00Z"
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Key Points**:
-- Transaction groups multiple currency batches
-- Each batch tracks independently
-- Progress steps: validation → creation → customer_creation → payment_processing → completion
-- Real-time payment counts
-- Failed payment details available
-- Export results as CSV
+Call [POST /api/v3/bulk-payments/preview-batches](/v3/api-reference/bulk-payments/preview-batches) with the file hash. This shows you exactly how many batches will be created, the total per currency, and which wallet you'll need to assign to each.
 
 ---
 
-## Mobile Money Bulk Disbursement
+## 3. Create Batches
 
-Bulk payments via mobile money networks.
+Call [POST /api/v3/bulk-payments/create-batches](/v3/api-reference/bulk-payments/create-batches), assigning a payout wallet to each currency. Kotani Pay verifies your balance, creates the transaction record, and queues all batches for processing.
 
-### Payment Details
-
-**Supported Networks**: M-PESA, Airtel Money, MTN Mobile Money, Tigo Pesa, Vodafone
-
-**Supported Countries**: Kenya, Uganda, Tanzania, Ghana, Nigeria, Zambia
-
-**Processing**:
-- Automatic network detection from phone number
-- Currency validation per country
-- Direct disbursement to mobile wallets
-- SMS confirmation sent to recipient
-- Real-time status updates
-
-**Typical Processing Time**: 5-30 seconds per payment
-
-**Key Points**:
-- No recipient registration required
-- Works with any mobile money number
-- Automatic currency conversion if needed
-- Recipient receives SMS notification
-- Failed payments reversed automatically
+Save the `transactionId` and `batchId`s from the response — you'll need them to track progress.
 
 ---
 
-## Bank Transfer Bulk Disbursement
+## 4. Processing Happens Asynchronously
 
-Bulk payments via bank transfers.
+Batches process in the background. For each recipient, Kotani Pay initiates a disbursement to their mobile money wallet or bank account. Your payout balance is debited as each payment is sent.
 
-### Payment Details
-
-**Supported Countries**: Kenya, South Africa
-
-**Required Information**:
-- Account holder name
-- Account number
-- Bank code
-- Phone number (for verification)
-
-**Processing**:
-- Bank account validation
-- Direct transfer to bank account
-- Reference number provided per payment
-- Email notification to recipient (if provided)
-
-**Typical Processing Time**: Instant to 24 hours depending on bank
-
-**Key Points**:
-- Requires valid bank account details
-- Inter-bank transfers may take longer
-- Reference number for tracking
-- Failed transfers reversed automatically
-- Bank holidays may affect processing
+- If a disbursement succeeds, the recipient gets an SMS from the mobile money network
+- If a disbursement fails, the debit is automatically reversed
 
 ---
 
-## Callbacks
+## 5. Kotani Pay Notifies You
 
-Each bulk payment batch is created with a `callbackUrl`. Individual payments within a batch are processed as withdrawal transactions, so each payment completion triggers the standard `transaction.withdrawal.status.updated` webhook event to your configured webhook endpoint.
+Each individual payment fires a `transaction.withdrawal.status.updated` webhook as it settles — the same payload as a standard withdrawal. See [Webhooks](/v3/essentials/webhooks#transactionwithdrawalstatusupdated).
 
-For overall batch progress and results, poll the batch status endpoints rather than relying solely on individual payment webhooks:
-
-- `GET /api/v3/bulk-payments/batches/:batchId` — current batch status and counts
-- `GET /api/v3/bulk-payments/batches/:batchId/payments` — status of each individual payment
-
-See [Webhooks](/v3/essentials/webhooks) for the withdrawal event payload structure and signature verification.
+<Note>
+For overall batch progress, poll the batch status endpoints rather than relying solely on per-payment webhooks.
+</Note>
 
 ---
 
-## Best Practices
+## 6. Track Progress
 
-### CSV Preparation
-- Use UTF-8 encoding
-- Include all required columns
-- Use E.164 phone format (+254...)
-- Ensure unique references
-- Validate data before upload
-- Keep file size under 10MB
-- Maximum 1000 recipients per upload
+- [GET /api/v3/bulk-payments/batches/:batchId](/v3/api-reference/bulk-payments/get-batch) — current batch status and success/fail counts
+- [GET /api/v3/bulk-payments/batches/:batchId/payments](/v3/api-reference/bulk-payments/get-batch-payments) — status of each individual payment
+- [GET /api/v3/bulk-payments/transactions/:transactionId](/v3/api-reference/bulk-payments/list-transactions) — overview of all batches under a transaction
 
-### Wallet Management
-- Ensure sufficient balance before upload
-- Use separate wallets per currency
-- Monitor wallet balance during processing
-- Set up low balance alerts
-- Top up wallets during business hours
-
-### Error Handling
-- Review validation errors before submission
-- Monitor failed payments
-- Retry failed payments manually if needed
-- Keep audit trail of all uploads
-- Export results for reconciliation
-
-### Performance
-- Process during off-peak hours for faster completion
-- Split very large batches (>500 payments)
-- Use transaction grouping for related batches
-- Monitor progress via API or webhooks
-- Cache batch status to reduce API calls
-
-### Security
-- Verify webhook signatures
-- Store sensitive recipient data securely
-- Use HTTPS for all callbacks
-- Implement idempotency in webhook handlers
-- Rotate API keys regularly
+Batch statuses move from `pending` → `processing` → `completed`, `completed_with_errors`, or `failed`.
 
 ---
 
-## Error Handling
+## Monitoring from the Dashboard
 
-### CSV Validation Errors
-```json
-{
-  "statusCode": 400,
-  "message": "CSV validation failed",
-  "errors": [
-    "Row 12: Missing recipient name",
-    "Row 45: Invalid email format",
-    "Row 67: Amount must be positive",
-    "Row 89: Invalid currency code 'XXX'",
-    "Duplicate references found: INV-001, INV-002"
-  ]
-}
-```
-
-### Insufficient Balance
-```json
-{
-  "statusCode": 400,
-  "message": "Insufficient wallet balance",
-  "details": {
-    "currency": "KES",
-    "required": 150000,
-    "available": 100000,
-    "shortfall": 50000
-  }
-}
-```
-
-### Batch Processing Errors
-```json
-{
-  "batchId": "batch_001",
-  "status": "completed_with_errors",
-  "summary": {
-    "total": 100,
-    "successful": 95,
-    "failed": 5
-  },
-  "failedPayments": [
-    {
-      "reference": "INV-012",
-      "reason": "Invalid phone number",
-      "walletReversed": true
-    },
-    {
-      "reference": "INV-034",
-      "reason": "Network timeout",
-      "retryScheduled": true,
-      "nextRetryAt": "2024-01-15T11:00:00Z"
-    }
-  ]
-}
-```
-
----
-
-## Testing
-
-Sandbox mode test data:
-
-**Test CSV Upload**: Use sample CSV with test data
-
-**Test Phone Numbers**:
-- Success: `+254700000000` (Kenya)
-- Failure: `+254799999999` (Invalid number)
-- Timeout: `+254788888888` (Network timeout)
-
-**Test Amounts**:
-- Amounts ending in `00` trigger success
-- Amounts ending in `99` trigger failure
-- Amounts ending in `50` trigger retry
-
-**Test Scenarios**:
-- Upload 10 recipients: All succeed
-- Upload 20 recipients: 18 succeed, 2 fail
-- Upload 5 recipients with same currency: Test wallet selection
-- Upload 15 recipients with 3 currencies: Test multi-batch creation
-
-**Test Wallets**: Sandbox wallets pre-funded with test balances
+1. Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com)
+2. Navigate to **Bulk Payments** in the left sidebar
+3. Select a transaction to see all batches and individual payment statuses

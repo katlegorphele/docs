@@ -1,350 +1,81 @@
 ---
-title: "Deposit Flows"
-description: "Complete sequence diagrams for all deposit transaction types"
+title: "Deposit Flow"
+description: "How to collect payments from customers via mobile money, bank checkout, or card"
 ---
 
-## Monitoring Deposits from the Dashboard
+A deposit is a collection — money moves from your customer into your Kotani Pay deposit balance. There are three collection methods: mobile money, bank checkout, and card.
 
-After initiating deposits via the API, you can track them in real time from the dashboard.
+---
 
-1. Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com)
-2. Use the **country and currency selector in the top right** to filter by the relevant market (e.g., Kenya / KES)
-3. Navigate to **Collections** in the left sidebar to see all deposit transactions for that currency
+## Before You Start
 
-<img
-  src="/images/dashboard/deposits-list.png"
-  alt="Deposits list in the dashboard with country/currency filter active"
-/>
+- An API key — see [API Keys](/v3/getting-started/api-keys)
+- A fiat wallet for the currency you're collecting in
+- A customer record for the person paying — see [Create Customer](/v3/api-reference/customers/mobile-money/create)
+- A publicly reachable `callbackUrl` on your server
 
-Each row shows the transaction reference, amount, status, customer, and timestamp. Click any row to see the full detail including provider reference and callback history.
+---
+
+## Mobile Money Deposit
+
+The most common collection method across Kenya, Uganda, Tanzania, Ghana, and other markets.
+
+**1. Create the customer** if you haven't already. The customer record holds the phone number and network details needed to trigger the collection.
+
+**2. Initiate the deposit** — call [POST /api/v3/deposit/mobile-money](/v3/api-reference/deposits/mobile-money) with your `callbackUrl`. The API responds immediately with a `PENDING` transaction. The customer has not paid yet.
+
+**3. The customer confirms.** Depending on the network:
+- M-PESA / Airtel — STK push, customer enters PIN to approve
+- MTN / others — USSD prompt or SMS confirmation
+
+**4. Kotani Pay notifies you** via your `callbackUrl` when the transaction settles:
+- `SUCCESSFUL` — funds collected, your deposit balance will be credited
+- `FAILED` — collection failed (declined, insufficient funds, timeout)
 
 <Note>
-  If you don't see a transaction, check that the correct country/currency is selected in the top-right filter — transactions are scoped to the active wallet.
+If you have a webhook secret configured, the callback arrives in a signed envelope with `X-Kotani-Signature`, `X-Kotani-Event`, and `X-Kotani-Integrator` headers. Without a secret, the transaction fields are posted directly to your `callbackUrl`. See [Webhooks](/v3/essentials/webhooks).
 </Note>
 
----
-
-## How Deposit Balances Work
-
-Successful deposits are reconciled by a background job and credited to your **deposit balance** (not payout balance). To use collected funds for withdrawals, you must first transfer them to your payout balance.
-
-See [Balances & Settlement](/v3/essentials/balances-and-settlement) for how to do this.
+**5. Poll for status** if needed — [GET /api/v3/deposit/mobile-money/status/:reference_id](/v3/api-reference/deposits/mobile-money-status).
 
 ---
 
-## Mobile Money Deposit Flow
+## Bank Checkout Deposit
 
-Collect payments via mobile money wallets (M-PESA, MTN Money, Airtel Money, etc.)
+Kotani Pay generates a checkout URL and the customer completes payment on the bank's hosted page.
 
-### Flow Diagram
+**1. Initiate the checkout** — call [POST /api/v3/deposit/bank-checkout](/v3/api-reference/deposits/bank-checkout) with your `callbackUrl` and a `redirectUrl` (where to send the customer after they finish on the bank page).
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant MNO as Mobile Money Network
-    participant CronJob
-    participant Integrator
+**2. Redirect the customer** to the `checkoutUrl` in the response. They complete payment there.
 
-    User->>Kotani Pay: POST /deposit/mobile-money
-    Note right of User: Can provide reference_id<br/>or system generates one
-    Kotani Pay->>Kotani Pay: Validate API Key & Customer
-    Kotani Pay->>Kotani Pay: Generate/Use Transaction ID
-    Kotani Pay->>Kotani Pay: Calculate Fees
-    Kotani Pay->>Kotani Pay: Status: PENDING
+**3. Kotani Pay notifies you** via your `callbackUrl` when the bank confirms — same event structure as mobile money.
 
-    Kotani Pay->>MNO: Initiate Collection
-    MNO-->>User: STK Push / USSD Prompt
-    MNO-->>Kotani Pay: Request Accepted
-
-    User->>MNO: Enter PIN / Confirm
-
-    alt Provider Has Webhooks
-        MNO->>Kotani Pay: Payment Webhook
-    else Polling Required
-        Note over CronJob: Every 5 Minutes
-        CronJob->>Kotani Pay: Check Pending
-        Kotani Pay->>MNO: Query Status
-        MNO-->>Kotani Pay: Current Status
-    end
-
-    alt Payment Successful
-        Kotani Pay->>Kotani Pay: Status: SUCCESSFUL
-        Note over CronJob: Reconciliation
-        CronJob->>Kotani Pay: Credit Deposit Balance
-
-        Kotani Pay->>Integrator: Send Webhook
-        alt Webhook Success
-            Integrator-->>Kotani Pay: 200 OK
-        else Webhook Failed
-            Note over CronJob: Retry Every 2h (Max 24h)
-        end
-
-    else Payment Failed
-        Kotani Pay->>Kotani Pay: Status: FAILED
-        Kotani Pay->>Integrator: Send Failed Webhook
-
-    else Timeout (24h)
-        Kotani Pay->>Kotani Pay: Status: EXPIRED
-        Kotani Pay->>Integrator: Send Timeout Webhook
-    end
-
-    User->>Kotani Pay: GET /deposit/mobile-money/status/:reference_id
-    Kotani Pay-->>User: Status & Details
-```
-
-### Details
-
-**Countries**: Kenya, Uganda, Tanzania, Ghana, Nigeria, Zambia, and more
-**Networks**: M-PESA, MTN Money, Airtel Money, Tigo Pesa, Vodacom
-**Flow**: STK Push or USSD prompt
-**Speed**: Instant to few minutes
-
-**Key Points**:
-- Transaction ID can be integrator-provided or system-generated
-- Funds credited after reconciliation (not immediate)
-- 24-hour timeout for pending payments
-- Automatic webhook retries
+**4. Poll for status** if needed — [GET /api/v3/deposit/bank-checkout/status/:reference_id](/v3/api-reference/deposits/bank-checkout-status).
 
 ---
 
-## Bank Checkout Deposit Flow
+## Card Deposit
 
-Collect payments via bank transfers with secure checkout portals.
+**1. Initiate the charge** — call [POST /api/v3/deposit/card](/v3/api-reference/deposits/card) with your `callbackUrl`.
 
-### Flow Diagram
+**2. Handle 3DS if required.** If the response includes a redirect URL, send the customer there to complete 3D Secure authentication before the charge can settle.
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant Bank as Bank Provider
-    participant CronJob
-    participant Integrator
+**3. Kotani Pay notifies you** via your `callbackUrl` when the charge settles.
 
-    User->>Kotani Pay: POST /deposit/bank-checkout
-    Note right of User: Can provide reference_id<br/>or system generates one
-    Kotani Pay->>Kotani Pay: Validate API Key & Customer
-    Kotani Pay->>Kotani Pay: Generate/Use Transaction ID
-    Kotani Pay->>Kotani Pay: Calculate Fees
-    Kotani Pay->>Kotani Pay: Status: PENDING
-
-    Kotani Pay->>Bank: Create Checkout Session
-    Bank-->>Kotani Pay: Checkout URL
-    Kotani Pay-->>User: Redirect to Bank Portal
-
-    User->>Bank: Complete Payment
-    Bank->>Kotani Pay: Payment Webhook
-
-    alt Payment Successful
-        Kotani Pay->>Kotani Pay: Status: SUCCESSFUL
-        Note over CronJob: Reconciliation
-        CronJob->>Kotani Pay: Credit Deposit Balance
-
-        Kotani Pay->>Integrator: Send Webhook
-        alt Webhook Success
-            Integrator-->>Kotani Pay: 200 OK
-        else Webhook Failed
-            Note over CronJob: Retry Every 2h (Max 24h)
-        end
-
-    else Payment Failed
-        Kotani Pay->>Kotani Pay: Status: FAILED
-        Kotani Pay->>Integrator: Send Failed Webhook
-
-    else Timeout (24h)
-        Kotani Pay->>Kotani Pay: Status: EXPIRED
-        Kotani Pay->>Integrator: Send Timeout Webhook
-    end
-
-    User->>Kotani Pay: GET /deposit/bank-checkout/status/:reference_id
-    Kotani Pay-->>User: Status & Details
-```
-
-### Details
-
-**Countries**: Kenya, South Africa
-**Flow**: Redirect to secure bank portal
-**Settlement**: Instant to 1 business day
-**Banks**: Major banks in supported countries
-
-**Key Points**:
-- User redirected to secure bank portal
-- Bank provider handles payment collection
-- Webhook notification on completion
-- Same reconciliation process as mobile money
+**4. Poll for status** if needed — [GET /api/v3/deposit/card/status/:reference_id](/v3/api-reference/deposits/card-status).
 
 ---
 
-## Card Deposit Flow
+## Monitoring from the Dashboard
 
-Collect payments via credit/debit cards with 3DS support.
+1. Log in to [backoffice.kotanipay.com](https://backoffice.kotanipay.com)
+2. Use the **country and currency selector** to filter by market
+3. Navigate to **Collections** in the left sidebar
 
-### Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Kotani Pay
-    participant Card as Card Provider
-    participant CronJob
-    participant Integrator
-
-    User->>Kotani Pay: POST /deposit/card
-    Note right of User: Can provide reference_id<br/>or system generates one
-    Kotani Pay->>Kotani Pay: Validate API Key & Customer
-    Kotani Pay->>Kotani Pay: Generate/Use Transaction ID
-    Kotani Pay->>Kotani Pay: Calculate Fees
-    Kotani Pay->>Kotani Pay: Status: PENDING
-
-    Kotani Pay->>Card: Create Card Session
-    Card-->>Kotani Pay: Card Form URL
-    Kotani Pay-->>User: Card Payment Form
-
-    User->>Card: Submit Card & CVV
-
-    alt 3DS Required
-        Card->>User: Redirect to 3DS
-        User->>Card: Complete 3DS Auth
-    end
-
-    Card->>Kotani Pay: Payment Webhook
-
-    alt Payment Successful
-        Kotani Pay->>Kotani Pay: Status: SUCCESSFUL
-        Note over CronJob: Reconciliation
-        CronJob->>Kotani Pay: Credit Deposit Balance
-
-        Kotani Pay->>Integrator: Send Webhook
-        alt Webhook Success
-            Integrator-->>Kotani Pay: 200 OK
-        else Webhook Failed
-            Note over CronJob: Retry Every 2h (Max 24h)
-        end
-
-    else Payment Failed/Declined
-        Kotani Pay->>Kotani Pay: Status: FAILED/DECLINED
-        Kotani Pay->>Integrator: Send Failed Webhook
-
-    else Timeout (24h)
-        Kotani Pay->>Kotani Pay: Status: EXPIRED
-        Kotani Pay->>Integrator: Send Timeout Webhook
-    end
-
-    User->>Kotani Pay: GET /deposit/card/status/:reference_id
-    Kotani Pay-->>User: Status & Details
-```
-
-### Details
-
-**Countries**: Multiple African countries
-**Supported Cards**: Visa, Mastercard, Verve
-**Security**: 3DS authentication supported
-**Processing**: Instant authorization
-
-**Key Points**:
-- Card details not stored by system
-- 3DS adds extra security layer
-- Instant authorization from card provider
-- Webhook confirms final status
+Each row shows the reference, amount, status, customer, and timestamp. Click any row for the full detail including provider reference and callback history.
 
 ---
 
-## Transaction Statuses
-
-| Status | Description |
-|--------|-------------|
-| `PENDING` | Awaiting user payment or Payment being processed|
-| `INITIATED` | Payment request sent to provider |
-| `IN_PROGRESS` | Payment being processed |
-| `REQUIRE_REVIEW` | Payment requires manual review |
-| `SUCCESSFUL` | Payment confirmed, funds will be credited |
-| `FAILED` | Payment failed |
-| `EXPIRED` | No confirmation within 24 hours |
-| `CANCELLED` | Transaction cancelled |
-| `DECLINED` | Payment declined by provider |
-| `REVERSED` | Payment reversed |
-
----
-
-## Common Features
-
-### Transaction ID
-- Can be **integrator-provided** via `reference_id`
-- Or **system-generated** if not provided
-- Must be unique per integrator
-
-### No Rate Locking
-Deposits collect fiat currency directly - no exchange rates involved.
-
-### Automatic Reconciliation
-- Successful deposits reconciled via cron job
-- Funds credited to fiat wallet deposit balance
-- Transaction records created for audit
-
-### Status Monitoring
-- Webhook callbacks for instant updates (when available)
-- Polling every 5 minutes for pending transactions
-- 24-hour timeout for unconfirmed payments
-
-### Callback Retries
-- Initial delivery via webhook
-- Failed callbacks retry every 2 hours
-- Maximum retry period: 24 hours
-
----
-
-## Error Handling
-
-### Insufficient Funds
-```json
-{
-  "status": "FAILED",
-  "error": "Insufficient funds in account"
-}
-```
-
-### Invalid Customer
-```json
-{
-  "status": "FAILED",
-  "error": "Invalid phone number or account details"
-}
-```
-
-### Card Declined
-```json
-{
-  "status": "DECLINED",
-  "error": "Card declined by issuer"
-}
-```
-
-### Timeout
-```json
-{
-  "status": "EXPIRED",
-  "error": "Payment not confirmed within 24 hours"
-}
-```
-
-### Duplicate Reference
-```json
-{
-  "statusCode": 400,
-  "message": "Reference already used"
-}
-```
-
----
-
-## Best Practices
-
-### Unique References
-Always provide unique `reference_id` values to track transactions.
-
-### Implement Webhooks
-Set up webhook endpoint for real-time status updates.
-
-### Handle All Statuses
-Integration should handle all transaction statuses gracefully.
+<Note>
+Successful deposits land in your **deposit balance**, not your payout balance. To use collected funds for withdrawals, transfer them to your payout balance first — see [Balances & Settlement](/v3/essentials/balances-and-settlement).
+</Note>
